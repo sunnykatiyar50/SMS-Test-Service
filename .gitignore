@@ -3,6 +3,5 @@ node_modules/*
 .vscode/*
 *.log
 *.sqlite
-sms-db.sqlite
 .env
 !sample.env

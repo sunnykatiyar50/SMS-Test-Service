@@ -1,3 +1,14 @@
+.selected-message-html {
+    background: #f5f5f5;
+    border: 1px solid #b2dfdb;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.95em;
+    color: #333;
+    margin-bottom: 8px;
+    word-break: break-word;
+    white-space: pre-line;
+}
 h2#selectedMessageTitle {
     font-size: 1.1em;
     color: #00796b;

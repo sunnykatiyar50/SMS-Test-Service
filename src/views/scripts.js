@@ -1,3 +1,14 @@
+// Auto-refresh the page only when it comes into focus after being blurred
+let shouldRefreshOnFocus = false;
+window.addEventListener('blur', () => {
+    shouldRefreshOnFocus = true;
+});
+window.addEventListener('focus', () => {
+    if (shouldRefreshOnFocus) {
+        shouldRefreshOnFocus = false;
+        reloadWithSavedParams();
+    }
+});
 let messages = [];
 let filteredMessages = [];
 let currentPage = 1;
@@ -104,6 +115,10 @@ function checkAndHideLeftColumn() {
 // --- Message Loading and Rendering ---
 
 async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = '', startDate = '', endDate = '') {
+    // Save params to localStorage for reload/focus
+    localStorage.setItem('sms_query_params', JSON.stringify({
+        page, pageSize: pageSizeParam, searchInput, startDate, endDate
+    }));
     try {
         const queryParams = new URLSearchParams({
             page,
@@ -205,7 +220,8 @@ function openMessageDetails(message) {
     }
     selectedMessageTimestamp.textContent = timestamp;
     selectedMessagePhone.textContent = phone;
-    selectedMessageText.textContent = msgText;
+    // Render message as HTML (be careful: this allows HTML in message)
+    selectedMessageText.innerHTML = msgText;
     selectedMessageTitle.textContent = sender ? `Sender: ${sender}` : 'Sender: <no-sender-specified>';
 }
 
@@ -259,6 +275,30 @@ async function filterMessages() {
     const endDate = document.getElementById('endDate').value;
     currentPage = 1;
     await loadMessages(currentPage, pageSize, searchInput, startDate, endDate);
+}
+
+function reloadWithSavedParams() {
+    const params = localStorage.getItem('sms_query_params');
+    if (params) {
+        try {
+            const { page, pageSize: ps, searchInput, startDate, endDate } = JSON.parse(params);
+            // Set UI fields
+            document.getElementById('searchInput').value = searchInput || '';
+            document.getElementById('startDate').value = startDate || '';
+            document.getElementById('endDate').value = endDate || '';
+            if (ps) {
+                pageSize = ps;
+                document.getElementById('pageSizeSelect').value = ps;
+            }
+            loadMessages(page || 1, ps || pageSize, searchInput || '', startDate || '', endDate || '');
+        } catch (e) {
+            // fallback: load all
+            loadMessages(1, pageSize, '', '', '');
+        }
+    } else {
+        // No params: load all
+        loadMessages(1, pageSize, '', '', '');
+    }
 }
 
 // --- Form and Misc ---
@@ -360,13 +400,9 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 
-
 window.onload = () => {
-    // Do not set default dates; show all messages by default
-    document.getElementById('startDate').value = '';
-    document.getElementById('endDate').value = '';
-    document.getElementById('searchInput').value = '';
-    loadMessages(1, pageSize, '', '', '');
+    // On first visit, show all messages (no filters). If params exist, restore them.
+    reloadWithSavedParams();
     updateButtonText();
 };
 
