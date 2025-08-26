@@ -2,12 +2,14 @@
     background: #f5f5f5;
     border: 1px solid #b2dfdb;
     border-radius: 6px;
-    padding: 12px;
-    font-size: 0.95em;
+    padding: 10px;
+    font-size: 1.05em;
     color: #333;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    line-height: 1.35em;
     word-break: break-word;
     white-space: pre-line;
+    font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Courier New', monospace;
 }
 h2#selectedMessageTitle {
     font-size: 1.1em;
@@ -241,12 +243,15 @@ button[type="submit"]:hover {
 }
 
 .message-text {
-    font-size: 16px;
+    font-size: 1.0em;
+    line-height: 1.35em;
     color: #333;
+    margin-top: 7px;
     margin-top: 5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Courier New', monospace;
 }
 
 /* --- Selected Row --- */
