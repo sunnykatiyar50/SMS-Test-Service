@@ -1,3 +1,25 @@
+h2#selectedMessageTitle {
+    font-size: 1.1em;
+    color: #00796b;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.selected-message-divider {
+    border: none;
+    border-top: 2px solid #b2dfdb;
+    margin: 0 0 16px 0;
+}
+
+.selected-message-row {
+    margin-bottom: 12px;
+}
+h2#selectedMessageTitle {
+    font-size: 1.1em;
+    color: #00796b;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
 /* --- Disabled Button --- */
 .button-disabled {
     background-color: #cccccc !important;

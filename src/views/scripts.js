@@ -195,12 +195,18 @@ function openMessageDetails(message) {
     const selectedMessageTimestamp = document.getElementById('selectedMessageTimestamp');
     const selectedMessagePhone = document.getElementById('selectedMessagePhone');
     const selectedMessageText = document.getElementById('selectedMessageText');
+    const selectedMessageTitle = document.getElementById('selectedMessageTitle');
     const timestamp = message && message.timestamp ? new Date(message.timestamp).toLocaleString() : '';
     const phone = message && message.phone ? maskPhoneNumber(message.phone) : '';
     const msgText = message && message.message ? message.message : '';
+    let sender = '';
+    if (message && typeof message.sender === 'string' && message.sender.trim() !== '') {
+        sender = message.sender;
+    }
     selectedMessageTimestamp.textContent = timestamp;
     selectedMessagePhone.textContent = phone;
     selectedMessageText.textContent = msgText;
+    selectedMessageTitle.textContent = sender ? `Sender: ${sender}` : 'Sender: <no-sender-specified>';
 }
 
 function openMessageModal(message) {

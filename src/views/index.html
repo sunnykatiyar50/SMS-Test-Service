@@ -95,12 +95,13 @@
 
             <!-- New Section for Selected Message -->
             <div id="selectedMessageContainer" class="selected-message-container">
-                <h2>Selected Message</h2>
+                <h2 id="selectedMessageTitle">Selected Message</h2>
+                <hr class="selected-message-divider" />
                 <div id="selectedMessageDetails">
-                    <p><strong>Timestamp:</strong> <span id="selectedMessageTimestamp"></span></p>
-                    <p><strong>Phone:</strong> <span id="selectedMessagePhone"></span></p>
-                    <p><strong>Message:</strong></p>
-                    <p id="selectedMessageText"></p>
+                    <p class="selected-message-row"><strong>Timestamp:</strong> <span id="selectedMessageTimestamp"></span></p>
+                    <p class="selected-message-row"><strong>Phone:</strong> <span id="selectedMessagePhone"></span></p>
+                    <p class="selected-message-row"><strong>Message:</strong></p>
+                    <p class="selected-message-row" id="selectedMessageText"></p>
                 </div>
             </div>
         </div>
