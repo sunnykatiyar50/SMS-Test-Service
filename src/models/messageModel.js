@@ -8,7 +8,12 @@ class MessageModel {
     }
 
     async init() {
-        this.db = await initializeDatabase();
+        try {
+            this.db = await initializeDatabase();
+        } catch (error) {
+            logToFile(`Database initialization failed: ${error.stack || error}`);
+            console.error('Database initialization failed:', error);
+        }
     }
 
     async getMessages({ search = '', startDate, endDate } = {}) {
