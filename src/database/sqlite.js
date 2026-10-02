@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
+const { logToFile } = require('../utils/logger');
 
 async function initializeDatabase() {
     logToFile('Initializing SQLite database connection...');
