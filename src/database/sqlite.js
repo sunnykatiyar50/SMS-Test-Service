@@ -1,18 +1,18 @@
-const sqlite3 = require('sqlite3');
-const { open } = require('sqlite');
+const { DatabaseSync } = require('node:sqlite');
 const { logToFile } = require('../utils/logger');
 
-// SQLite stores timestamps as ISO-8601 text, which sorts and compares correctly as strings
-const toParam = value => (value instanceof Date ? value.toISOString() : value);
+// Uses Node's built-in SQLite driver, so there is no native module to compile and the same
+// node_modules works on Windows, WSL/Linux and in Docker.
+//
+// SQLite stores timestamps as ISO-8601 text, which sorts and compares correctly as strings.
+// node:sqlite rejects undefined, so it becomes NULL.
+const toParam = value => (value instanceof Date ? value.toISOString() : value === undefined ? null : value);
 
 async function connect() {
     logToFile('Initializing SQLite database connection...');
-    const db = await open({
-        filename: process.env.SQLITE_PATH || './sms-db.sqlite',
-        driver: sqlite3.Database,
-    });
+    const db = new DatabaseSync(process.env.SQLITE_PATH || './sms-db.sqlite');
 
-    await db.exec(
+    db.exec(
         `CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             message TEXT NOT NULL,
@@ -21,18 +21,20 @@ async function connect() {
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )`
     );
-    const columns = await db.all('PRAGMA table_info(messages)');
+    const columns = db.prepare('PRAGMA table_info(messages)').all();
     if (!columns.some(c => c.name === 'api_key_name')) {
-        await db.exec('ALTER TABLE messages ADD COLUMN api_key_name TEXT');
+        db.exec('ALTER TABLE messages ADD COLUMN api_key_name TEXT');
     }
-    await db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp)');
+
+    const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));
 
     return {
         dialect: 'sqlite',
-        all: (sql, params = []) => db.all(sql, params.map(toParam)),
-        run: async (sql, params = []) => (await db.run(sql, params.map(toParam))).changes,
-        insert: async (sql, params = []) => (await db.run(sql, params.map(toParam))).lastID,
-        close: () => db.close(),
+        all: async (sql, params = []) => db.prepare(sql).all(...params.map(toParam)),
+        run: async (sql, params = []) => Number(run(sql, params).changes),
+        insert: async (sql, params = []) => Number(run(sql, params).lastInsertRowid),
+        close: async () => db.close(),
     };
 }
 

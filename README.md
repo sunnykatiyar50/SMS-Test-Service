@@ -65,7 +65,7 @@ sms-test-service
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20 or later (tested with Node.js 24) and npm
+- [Node.js](https://nodejs.org/) 22.13 or later (tested with Node.js 22 and 24) and npm. SQLite support is built into Node, so there are no native modules to compile and the same install works on Windows, WSL, Linux, and macOS.
 - Optional: a PostgreSQL or MySQL server, if you don't want to use SQLite
 
 ## Installation
@@ -158,9 +158,6 @@ docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001
 `-e PORT=30001` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:30001`.
 
 Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
-
-The image builds `sqlite3` from source if no prebuilt binary is available for your platform. The build tools for that are only used during the build and are not in the final image.
-
 If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
 
 ## API Endpoints
@@ -309,6 +306,8 @@ For every database type, the `messages` table is created automatically on startu
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
 - **`401 Invalid API key`:** the `X-API-Key` value doesn't match any key in `INGEST_API_KEYS`. Restart the server after changing `.env`.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
+- **`invalid ELF header` or `not a valid Win32 application` mentioning `node_sqlite3.node`:** a `node_modules` folder from an older version still contains the native `sqlite3` module, built for another OS (for example installed on Windows and started from WSL). Current versions don't use it. Delete `node_modules` and run `npm install` again.
+- **`SQLite is an experimental feature` warning on Node 22:** harmless. The npm scripts already hide it; it only appears if you start the app with plain `node src/app.js`.
 
 ## Contributing
 

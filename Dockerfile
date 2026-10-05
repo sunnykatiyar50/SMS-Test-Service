@@ -1,18 +1,3 @@
-# --- Build stage: install production dependencies ---
-# sqlite3 downloads a prebuilt binary during install and falls back to compiling from source
-# (unusual CPU architectures, or a proxy that blocks GitHub downloads). The toolchain for that
-# fallback lives only in this stage, so the final image stays small.
-FROM node:24-slim AS deps
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# --- Runtime stage ---
 FROM node:24-slim
 
 WORKDIR /app
@@ -23,8 +8,10 @@ ENV NODE_ENV=production \
     SQLITE_PATH=/app/data/sms-db.sqlite \
     LOG_DIR=/app/logs
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
+# All dependencies are pure JavaScript (SQLite uses Node's built-in node:sqlite), so no build tools are needed
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
 COPY src ./src
 
 # SQLite data and log files are written here; mount volumes to keep them
