@@ -3,119 +3,244 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Message Logs</title>
+    <title>SMS Test Service</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-    <div class="container">
-        <!-- Top Bar with Buttons -->
-        <div class="top-bar">
-            <button id="toggleFormButton" onclick="toggleForm()">Test API Form</button>
-            <button id="toggleApiSettingsButton" onclick="toggleApiSettings()">API Settings</button>
+<body class="app">
+    <!-- Sidebar navigation -->
+    <aside id="sidebar" class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-mark small">
+                <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <span class="label brand-name">SMS Test Service</span>
         </div>
 
-        <h1>SMS Test Service</h1>
-        <div class="main-content">
-            <!-- Left Column: API Settings and Send Message Form -->
-            <div id="leftColumn" class="left-column">
-                <!-- API Settings -->
-                <div id="apiSettings" class="api-settings-container">
-                    <h2>API Settings</h2>
-                    <p>Use the following API endpoint to send messages from a third-party app:</p>
-                    <pre><code id="apiEndpoint">POST http://localhost:3000/api/messages</code></pre>
-                    <p>Request Body (JSON):</p>
-                    <pre><code>{
-    "sender": "Your Name",
-    "phone": "1234567890",
-    "message": "Your message here"
-}</code></pre>
-                </div>
-                <!-- Send Message Form -->
-                <div id="sendMessageForm" class="form-container">
-                    <form id="messageForm" onsubmit="sendMessage(event)">
-                        <label for="senderInput">Sender:</label>
-                        <input type="text" id="senderInput" placeholder="Enter sender name" required />
-                        
-                        <label for="phoneInput">Phone:</label>
-                        <input type="text" id="phoneInput" placeholder="Enter phone number" required />
-                        
-                        <label for="messageInput">Message:</label>
-                        <textarea id="messageInput" placeholder="Enter your message" required></textarea>
-                        
-                        <div class="form-buttons">
-                            <button type="submit">Send Message</button>
-                            <button type="button" onclick="clearForm()">Clear</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+        <nav class="sidebar-nav" aria-label="Main">
+            <a href="#/messages" class="nav-link" data-view="messages" title="Messages">
+                <svg viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                <span class="label">Messages</span>
+                <span id="navCount" class="nav-badge label"></span>
+            </a>
+            <a href="#/send" class="nav-link" data-view="send" title="Send test">
+                <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <span class="label">Send test</span>
+            </a>
+            <a href="#/api" class="nav-link" data-view="api" title="API reference">
+                <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <span class="label">API reference</span>
+            </a>
+        </nav>
 
-            <!-- Right Column: Message Logs -->
-            <div id="messageLogs" class="message-list-container">
-                <div class="filters">
-                    <label for="startDate">Start Date:</label>
-                    <input type="date" id="startDate" />
-                    
-                    <label for="endDate">End Date:</label>
-                    <input type="date" id="endDate" />
-                    
-                    <input type="text" id="searchInput" placeholder="Search messages..." />
+        <div class="sidebar-footer">
+            <div id="authWarning" class="auth-warning label hidden">Authentication is disabled</div>
+            <div class="nav-link static" title="Signed in user">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span id="currentUser" class="label">admin</span>
+            </div>
+            <button type="button" id="logoutButton" class="nav-link" title="Sign out">
+                <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                <span class="label">Sign out</span>
+            </button>
+            <button type="button" id="collapseButton" class="nav-link" title="Collapse sidebar" aria-expanded="true">
+                <svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+                <span class="label">Collapse</span>
+            </button>
+        </div>
+    </aside>
+
+    <main class="content">
+        <!-- ===== Messages ===== -->
+        <section id="viewMessages" class="view" data-view="messages">
+            <header class="view-header">
+                <div class="view-title">
+                    <h1>Messages</h1>
+                    <span id="messageInfo" class="muted"></span>
+                </div>
+                <div class="toolbar">
+                    <input type="search" id="searchInput" placeholder="Search text, phone, sender" aria-label="Search" />
+                    <label class="date-field"><span>From</span><input type="date" id="startDate" /></label>
+                    <label class="date-field"><span>To</span><input type="date" id="endDate" /></label>
                     <button id="searchButton" type="button" class="primary">Search</button>
+                    <button id="resetFiltersButton" type="button" class="ghost" title="Clear filters">Reset</button>
+                    <button id="refreshButton" type="button" class="ghost icon-only" title="Refresh" aria-label="Refresh">
+                        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
                 </div>
-                <div class="select-all-container" style="display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" />
-                        <label for="selectAllCheckbox">Select All</label>
-                    </div>
-                    <button id="deleteSelectedButton">Delete Selected</button>
-                </div>
-                <ul id="messageList">
-                    <!-- Message rows will be dynamically rendered here -->
-                </ul>
-                <div class="pagination-container">
-                    <div id="pagination">
-                        <button id="prevPage" onclick="changePage(-1)" disabled>Previous</button>
-                        <span id="pageInfo"></span>
-                        <button id="nextPage" onclick="changePage(1)" disabled>Next</button>
-                    </div>
-                    <div class="message-info-container">
-                        <span id="messageInfo"></span>
-                    </div>
-                    <div class="page-size-container">
-                        <label for="pageSizeSelect">Messages per page:</label>
-                        <select id="pageSizeSelect" onchange="changePageSize()">
-                            <option value="10">10</option>
-                            <option value="20">20</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+            </header>
 
-            <!-- New Section for Selected Message -->
-            <div id="selectedMessageContainer" class="selected-message-container">
-                <h2 id="selectedMessageTitle">Selected Message</h2>
-                <hr class="selected-message-divider" />
-                <div id="selectedMessageDetails">
-                    <p class="selected-message-row"><strong>Timestamp:</strong> <span id="selectedMessageTimestamp"></span></p>
-                    <p class="selected-message-row"><strong>Phone:</strong> <span id="selectedMessagePhone"></span></p>
-                    <p class="selected-message-row"><strong>Message:</strong></p>
-                    <div class="selected-message-row selected-message-html" id="selectedMessageText"></div>
+            <div class="messages-layout">
+                <div class="list-pane">
+                    <div class="list-toolbar">
+                        <label class="check-label"><input type="checkbox" id="selectAllCheckbox" /> Select all</label>
+                        <span id="selectionInfo" class="muted"></span>
+                        <span class="spacer"></span>
+                        <button id="deleteSelectedButton" type="button" class="danger-ghost" disabled>Delete selected</button>
+                    </div>
+                    <ul id="messageList" class="message-list"></ul>
+                    <div class="list-footer">
+                        <div id="pagination" class="pager">
+                            <button id="prevPage" type="button" class="ghost" disabled>‹ Prev</button>
+                            <span id="pageInfo"></span>
+                            <button id="nextPage" type="button" class="ghost" disabled>Next ›</button>
+                        </div>
+                        <label class="page-size">
+                            Per page
+                            <select id="pageSizeSelect">
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
+
+                <aside id="selectedMessageContainer" class="detail-pane">
+                    <div id="detailEmpty" class="empty-state">Select a message to see its details.</div>
+                    <div id="detailBody" class="hidden">
+                        <div class="detail-head">
+                            <h2 id="selectedMessageTitle"></h2>
+                            <span id="selectedMessageKey" class="chip hidden"></span>
+                        </div>
+                        <dl class="detail-meta">
+                            <dt>Received</dt><dd id="selectedMessageTimestamp"></dd>
+                            <dt>Phone</dt><dd id="selectedMessagePhone" class="mono"></dd>
+                            <dt>Length</dt><dd id="selectedMessageLength"></dd>
+                        </dl>
+                        <div class="detail-actions">
+                            <button type="button" id="copyMessageButton" class="ghost small">Copy message</button>
+                            <button type="button" id="copyCodeButton" class="ghost small hidden">Copy code</button>
+                        </div>
+                        <div id="selectedMessageText" class="message-body"></div>
+                    </div>
+                </aside>
             </div>
-        </div>
-    </div>
-    <div id="messageModal" class="modal hidden">
-        <div class="modal-content">
-            <span id="closeModal" class="close">&times;</span>
-            <h2>Message Details</h2>
-            <p id="modalMessageContent"></p>
-        </div>
-    </div>
-    <!-- <div class="message-info-container">
-        <span id="messageInfo"></span>
-    </div> -->
+        </section>
+
+        <!-- ===== Send test ===== -->
+        <section id="viewSend" class="view hidden" data-view="send">
+            <header class="view-header">
+                <div class="view-title">
+                    <h1>Send test message</h1>
+                    <span class="muted">Stored as if your app had called the API. Nothing is sent to a real phone.</span>
+                </div>
+            </header>
+
+            <div class="send-layout">
+                <form id="messageForm" class="card" novalidate>
+                    <div class="field-row">
+                        <div class="field">
+                            <label for="senderInput">Sender <span class="optional">optional</span></label>
+                            <input type="text" id="senderInput" placeholder="MyApp" maxlength="64" autocomplete="off" />
+                            <small class="field-error" id="senderError"></small>
+                        </div>
+                        <div class="field">
+                            <label for="phoneInput">Phone</label>
+                            <input type="tel" id="phoneInput" placeholder="+15551234567" autocomplete="off" />
+                            <small class="field-error" id="phoneError"></small>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="messageInput">Message</label>
+                        <textarea id="messageInput" rows="7" maxlength="1600" placeholder="Your OTP is 123456"></textarea>
+                        <div class="field-meta">
+                            <small class="field-error" id="messageError"></small>
+                            <small id="messageCounter" class="counter">0 / 1600</small>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="sampleOtpButton" class="link-button">Fill sample OTP</button>
+                        <span class="spacer"></span>
+                        <button type="button" id="clearFormButton" class="ghost">Clear</button>
+                        <button type="submit" id="sendButton" class="primary">Send message</button>
+                    </div>
+                    <p id="formStatus" class="form-status" role="status"></p>
+                </form>
+
+                <aside class="card result-card">
+                    <h3>Last response</h3>
+                    <pre id="lastResponse" class="code muted-code">Send a message to see the API response here.</pre>
+                    <a href="#/messages" id="viewInMessages" class="link-button hidden">View in Messages →</a>
+                    <h3>Equivalent request</h3>
+                    <pre id="equivalentCurl" class="code"></pre>
+                </aside>
+            </div>
+        </section>
+
+        <!-- ===== API reference ===== -->
+        <section id="viewApi" class="view hidden" data-view="api">
+            <header class="view-header">
+                <div class="view-title">
+                    <h1>API reference</h1>
+                    <span class="muted">Examples use this server's address.</span>
+                </div>
+            </header>
+
+            <div class="api-layout">
+                <article class="card">
+                    <h3>Send a message</h3>
+                    <div class="endpoint">
+                        <span class="method method-post">POST</span>
+                        <code id="sendEndpoint">/api/messages</code>
+                        <button type="button" class="copy-button" data-copy="sendEndpoint">Copy</button>
+                    </div>
+
+                    <h4>Headers</h4>
+                    <table class="ref-table">
+                        <tr><th>Content-Type</th><td><code>application/json</code></td></tr>
+                        <tr><th>X-API-Key</th><td>One of the keys in <code>INGEST_API_KEYS</code></td></tr>
+                    </table>
+
+                    <h4>Body</h4>
+                    <table class="ref-table">
+                        <tr><th>sender</th><td>Optional, up to 64 characters</td></tr>
+                        <tr><th>phone</th><td>Required. 6–15 digits, optional leading <code>+</code>. Spaces, dashes, dots and brackets are removed.</td></tr>
+                        <tr><th>message</th><td>Required, up to 1600 characters</td></tr>
+                    </table>
+
+                    <div class="code-header">
+                        <h4>Example</h4>
+                        <button type="button" class="copy-button" data-copy="curlSend">Copy</button>
+                    </div>
+                    <pre class="code" id="curlSend"></pre>
+
+                    <h4>Responses</h4>
+                    <table class="ref-table">
+                        <tr><th><span class="status ok">201</span></th><td>Stored. Returns <code>{ success, id, timestamp }</code></td></tr>
+                        <tr><th><span class="status err">400</span></th><td>Invalid input; <code>details</code> lists the problem per field</td></tr>
+                        <tr><th><span class="status err">401</span></th><td>Missing or unknown <code>X-API-Key</code></td></tr>
+                        <tr><th><span class="status err">429</span></th><td>Rate limit exceeded</td></tr>
+                    </table>
+                </article>
+
+                <article class="card">
+                    <h3>Read messages from scripts and tests</h3>
+                    <p class="hint">Send <code>Authorization: Bearer &lt;ADMIN_TOKEN&gt;</code>. Phone numbers are masked unless you add <code>unmask=true</code>.</p>
+                    <table class="ref-table endpoints">
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages/latest?phone=…</code><br>Newest matching message, or 404</td></tr>
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages</code><br><code>search</code>, <code>phone</code>, <code>startDate</code>, <code>endDate</code>, <code>page</code>, <code>pageSize</code> (max 100)</td></tr>
+                        <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages/:id</code></td></tr>
+                        <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages</code> with <code>{ "ids": [1, 2] }</code></td></tr>
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/health</code><br>Public; <code>{ "status": "ok" }</code> when the database is reachable</td></tr>
+                    </table>
+
+                    <div class="code-header">
+                        <h4>Read the latest OTP</h4>
+                        <button type="button" class="copy-button" data-copy="curlLatest">Copy</button>
+                    </div>
+                    <pre class="code" id="curlLatest"></pre>
+
+                    <div class="code-header">
+                        <h4>In a JavaScript test</h4>
+                        <button type="button" class="copy-button" data-copy="jsLatest">Copy</button>
+                    </div>
+                    <pre class="code" id="jsLatest"></pre>
+                </article>
+            </div>
+        </section>
+    </main>
     <script src="scripts.js"></script>
 </body>
 </html>

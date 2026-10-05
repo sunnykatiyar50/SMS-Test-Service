@@ -1,0 +1,61 @@
+# Default (SQLite):   docker compose up --build
+# With PostgreSQL:    DB_TYPE=postgres docker compose --profile postgres up --build
+#
+# All settings come from .env (see sample.env); INGEST_API_KEYS, ADMIN_PASSWORD and SESSION_SECRET are required.
+# PORT in .env picks the host port; inside the container the app always listens on 30001.
+# Requires Docker Compose 2.24 or later.
+services:
+  sms-test-service:
+    build: .
+    image: sms-test-service:latest
+    init: true
+    ports:
+      - "${PORT:-30001}:30001"
+    env_file:
+      - path: .env
+        required: false
+    # Values here override .env. They pin container-internal paths and ports, and stop Compose
+    # from starting at all when a required secret is missing.
+    environment:
+      PORT: 30001
+      SQLITE_PATH: /app/data/sms-db.sqlite
+      LOG_DIR: /app/logs
+      INGEST_API_KEYS: ${INGEST_API_KEYS:?Set INGEST_API_KEYS in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      DB_TYPE: ${DB_TYPE:-sqlite}
+      # The bundled postgres service; shares its credentials with the service below
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: ${PG_USER:-sms}
+      PG_PASSWORD: ${PG_PASSWORD:-sms}
+      PG_DATABASE: ${PG_DATABASE:-sms}
+    volumes:
+      - sms-data:/app/data
+      - sms-logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${PG_USER:-sms}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-sms}
+      POSTGRES_DB: ${PG_DATABASE:-sms}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  sms-data:
+  sms-logs:
+  pg-data:
