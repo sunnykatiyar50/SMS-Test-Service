@@ -10,7 +10,8 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - API-key authentication for applications that submit messages, and a password-protected dashboard
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with sidebar navigation:
-  - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a detail pane with one-click "Copy code" for OTPs
+  - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
+  - Quick time range in the sidebar: last 10 minutes, hour, 8 hours, 24 hours, 7 days, 30 days, or all time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
 - Sign-in page with username and password from `.env`
@@ -215,13 +216,20 @@ Response `200`:
 ```json
 {
   "messages": [
-    { "id": 1, "sender": "MyApp", "phone": "*******4567", "message": "Your OTP is 123456", "timestamp": "2026-01-01T10:00:00.000Z", "apiKeyName": "myapp" }
+    { "id": 1, "sender": "MyApp", "phone": "*******4567", "message": "Your OTP is 123456", "timestamp": "2026-01-01T10:00:00.000Z", "apiKeyName": "myapp", "code": "123456" }
   ],
   "totalPages": 1,
   "totalMessages": 1,
   "currentPage": 1
 }
 ```
+
+Every message in API responses includes `code`: the one-time code detected in the text, or `null`. Detection handles:
+- plain codes of 4–8 digits, with the keyword before or after them ("123456 is your code");
+- split codes like `123-456` or `123 456` (returned as `123456`), Google-style `G-123456`, and letter codes like `AB12CD`;
+- keywords in several languages (OTP, code, passcode, PIN, código, код, ओटीपी, 验证码, …).
+
+Amounts (`Rs 5,000`), order, transaction and reference numbers, dates, times, and phone numbers are ignored.
 
 ### `GET /api/messages/latest`
 
@@ -236,8 +244,7 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:30001/api/message
 const res = await fetch(`${SMS_URL}/api/messages/latest?phone=15551234567`, {
   headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },
 });
-const { message } = await res.json();
-const otp = message.match(/\b\d{6}\b/)[0];
+const { code } = await res.json(); // e.g. "123456"
 ```
 
 ### `DELETE /api/messages/:id`

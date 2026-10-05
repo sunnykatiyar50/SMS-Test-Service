@@ -137,6 +137,7 @@ describe('admin API', () => {
         await ingest({ phone: '15550000002', message: 'Your code is 222222' });
         const res = await admin(request(app).get('/api/messages/latest?phone=15550000002'));
         assert.equal(res.body.message, 'Your code is 222222');
+        assert.equal(res.body.code, '222222');
     });
 
     test('latest returns 404 when nothing matches', async () => {
