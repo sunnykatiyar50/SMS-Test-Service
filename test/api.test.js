@@ -22,6 +22,7 @@ const ADMIN_PASSWORD = 'correct horse battery staple';
 const env = {
     INGEST_API_KEYS: `ci:${INGEST_KEY}`,
     ADMIN_TOKEN,
+    ADMIN_USERNAME: 'opsadmin',
     ADMIN_PASSWORD,
     SESSION_SECRET: 'x'.repeat(48),
 };
@@ -198,7 +199,7 @@ describe('admin API', () => {
 
 describe('dashboard session', () => {
     async function login() {
-        const res = await request(app).post('/auth/login').send({ password: ADMIN_PASSWORD });
+        const res = await request(app).post('/auth/login').send({ username: 'opsadmin', password: ADMIN_PASSWORD });
         assert.equal(res.status, 200);
         const cookie = res.headers['set-cookie'][0];
         assert.match(cookie, /HttpOnly/);
@@ -207,7 +208,37 @@ describe('dashboard session', () => {
     }
 
     test('rejects a wrong password', async () => {
-        const res = await request(app).post('/auth/login').send({ password: 'nope' });
+        const res = await request(app).post('/auth/login').send({ username: 'opsadmin', password: 'nope' });
+        assert.equal(res.status, 401);
+    });
+
+    test('rejects a wrong username, even with the right password', async () => {
+        const res = await request(app).post('/auth/login').send({ username: 'admin', password: ADMIN_PASSWORD });
+        assert.equal(res.status, 401);
+    });
+
+    test('requires both username and password', async () => {
+        const res = await request(app).post('/auth/login').send({ password: ADMIN_PASSWORD });
+        assert.equal(res.status, 400);
+    });
+
+    test('reports the signed-in username', async () => {
+        const cookie = await login();
+        const res = await request(app).get('/auth/status').set('Cookie', cookie);
+        assert.deepEqual(res.body, { authenticated: true, authDisabled: false, username: 'opsadmin' });
+    });
+
+    test('redirects the login page to the dashboard when already signed in', async () => {
+        const cookie = await login();
+        const res = await request(app).get('/login.html').set('Cookie', cookie);
+        assert.equal(res.status, 302);
+        assert.equal(res.headers.location, '/');
+    });
+
+    test('a session for a different username is rejected', async () => {
+        const { createSessionToken } = require('../src/utils/session');
+        const forged = createSessionToken(env.SESSION_SECRET, 60000, { u: 'someone-else' });
+        const res = await request(app).get('/api/messages').set('Cookie', `sms_session=${forged}`);
         assert.equal(res.status, 401);
     });
 

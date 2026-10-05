@@ -15,7 +15,9 @@ function createAuth(config) {
             return 'bearer';
         }
         const token = parseCookies(req.get('cookie'))[SESSION_COOKIE];
-        if (token && verifySessionToken(token, config.sessionSecret)) return 'cookie';
+        const session = token && verifySessionToken(token, config.sessionSecret);
+        // Changing ADMIN_USERNAME signs out existing sessions
+        if (session && session.u === config.adminUsername) return 'cookie';
         return null;
     }
 
@@ -66,12 +68,18 @@ function createAuth(config) {
 
     function login(req, res) {
         if (config.authDisabled) return res.json({ success: true });
-        const password = req.body && req.body.password;
-        if (typeof password !== 'string' || !safeEqual(password, config.adminPassword)) {
-            logToFile(`Failed dashboard login from ${req.ip}`);
-            return res.status(401).json({ error: 'Invalid password' });
+        const { username, password } = req.body || {};
+        if (typeof username !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Enter your username and password' });
         }
-        res.cookie(SESSION_COOKIE, createSessionToken(config.sessionSecret, ttlMs), {
+        // Check both so the response time doesn't reveal which one was wrong
+        const userOk = safeEqual(username.trim(), config.adminUsername);
+        const passOk = safeEqual(password, config.adminPassword);
+        if (!userOk || !passOk) {
+            logToFile(`Failed dashboard login from ${req.ip}`);
+            return res.status(401).json({ error: 'Incorrect username or password' });
+        }
+        res.cookie(SESSION_COOKIE, createSessionToken(config.sessionSecret, ttlMs, { u: config.adminUsername }), {
             ...cookieOptions(req),
             maxAge: ttlMs,
         });
@@ -85,7 +93,12 @@ function createAuth(config) {
     }
 
     function status(req, res) {
-        res.json({ authenticated: Boolean(adminAuthMethod(req)), authDisabled: config.authDisabled });
+        const method = adminAuthMethod(req);
+        res.json({
+            authenticated: Boolean(method),
+            authDisabled: config.authDisabled,
+            username: method === 'cookie' ? config.adminUsername : null,
+        });
     }
 
     return { adminAuthMethod, requireAdmin, requireIngest, login, logout, status };

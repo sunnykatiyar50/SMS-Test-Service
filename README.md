@@ -9,7 +9,11 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - REST API to submit, list, search, and delete messages
 - API-key authentication for applications that submit messages, and a password-protected dashboard
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
-- Web interface with a message list, text search (message, phone, and sender), date-range filter, pagination, and bulk delete, plus a tools panel with a test form and a built-in API reference with copyable cURL examples
+- Web dashboard with sidebar navigation:
+  - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a detail pane with one-click "Copy code" for OTPs
+  - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
+  - **API reference**: endpoints, auth, and copyable examples generated for your server
+- Sign-in page with username and password from `.env`
 - Phone numbers are masked in API responses and the dashboard (only the last 4 digits are shown)
 - Input validation, rate limiting, security headers (CSP), and optional automatic cleanup of old messages
 - Application logs written to `logs/app.log` and stdout, rotated daily. Message text is never logged.
@@ -40,7 +44,8 @@ sms-test-service
 │   │   ├── mask.js
 │   │   └── session.js            # Signed session cookies
 │   └── views                     # Web interface (served as static files)
-│       ├── index.html
+│       ├── favicon.svg
+│       ├── index.html                # Dashboard: Messages, Send test, API reference
 │       ├── login.html
 │       ├── login.js
 │       ├── scripts.js
@@ -98,9 +103,9 @@ sms-test-service
    npm run dev
    ```
 
-2. Open `http://localhost:3006` in your browser (or whichever `PORT` you set) and sign in with `ADMIN_PASSWORD`.
+2. Open `http://localhost:30001` in your browser (or whichever `PORT` you set) and sign in with `ADMIN_USERNAME` (default `admin`) and `ADMIN_PASSWORD`.
 
-3. Use the **Send test** tab in the tools panel to store a test message, or send messages from your own application through the API with an `X-API-Key` header (the **API reference** tab has ready-to-copy examples for this server). Messages appear in the list, newest first.
+3. Open **Send test** in the sidebar to store a test message, or send messages from your own application through the API with an `X-API-Key` header (**API reference** has ready-to-copy examples for this server). Messages appear under **Messages**, newest first.
 
 To run the tests:
 ```
@@ -113,7 +118,7 @@ npm test
 |-----|-----|--------|
 | Applications sending SMS | `X-API-Key: <key>` header, using one of the keys in `INGEST_API_KEYS` | `POST /api/messages` only |
 | Scripts and E2E tests | `Authorization: Bearer <ADMIN_TOKEN>` header | Everything |
-| People using the dashboard | Sign in with `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
+| People using the dashboard | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
 
 Each API key has a name (`INGEST_API_KEYS=web:key1,mobile:key2`). The name is stored with every message the key submits and returned as `apiKeyName`. Messages sent from the dashboard test form are stored as `dashboard`.
 
@@ -133,10 +138,10 @@ With a bundled PostgreSQL container:
 DB_TYPE=postgres docker compose --profile postgres up --build
 ```
 
-The service is available at `http://localhost:3006`. Set `PORT` to publish it on a different host port. Messages and logs are kept in the `sms-data` and `sms-logs` volumes (PostgreSQL data in `pg-data`), so they survive container restarts. To delete them, run `docker compose down -v`.
+The service is available at `http://localhost:30001`. Set `PORT` to publish it on a different host port. Messages and logs are kept in the `sms-data` and `sms-logs` volumes (PostgreSQL data in `pg-data`), so they survive container restarts. To delete them, run `docker compose down -v`.
 
 Compose passes every setting in `.env` to the container. A few are fixed inside the container regardless of `.env`:
-- The app listens on port `3006`. `PORT` in `.env` only chooses the host port.
+- The app listens on port `30001`. `PORT` in `.env` only chooses the host port.
 - The database lives in `/app/data` and logs in `/app/logs`.
 - `PG_HOST` is the bundled `postgres` service.
 
@@ -147,9 +152,9 @@ Stopping the container (`docker compose down` or `docker stop`) shuts the app do
 To build and run the image without Compose:
 ```
 docker build -t sms-test-service .
-docker run -d -p 3006:3006 -v sms-data:/app/data --env-file .env -e PORT=3006 --init --name sms-test-service sms-test-service
+docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001 --init --name sms-test-service sms-test-service
 ```
-`-e PORT=3006` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:3006`.
+`-e PORT=30001` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:30001`.
 
 Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
 
@@ -174,7 +179,7 @@ Request body (JSON):
 | `message` | string | Required. Message text, at most 1600 characters |
 
 ```
-curl -X POST http://localhost:3006/api/messages \
+curl -X POST http://localhost:30001/api/messages \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
   -d '{"sender": "MyApp", "phone": "15551234567", "message": "Your OTP is 123456"}'
@@ -203,7 +208,7 @@ List messages, newest first, with optional filtering and pagination. Requires ad
 | `unmask`        | `false` | `true` returns full phone numbers |
 
 ```
-curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:3006/api/messages?search=OTP&page=1&pageSize=20"
+curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:30001/api/messages?search=OTP&page=1&pageSize=20"
 ```
 
 Response `200`:
@@ -223,7 +228,7 @@ Response `200`:
 Return the newest message that matches the same filters as `GET /api/messages` (usually `phone`), or `404` if there is none. Requires admin authentication. This is handy in E2E tests to read the OTP your application just sent:
 
 ```
-curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:3006/api/messages/latest?phone=15551234567"
+curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:30001/api/messages/latest?phone=15551234567"
 ```
 
 ```js
@@ -240,7 +245,7 @@ const otp = message.match(/\b\d{6}\b/)[0];
 Delete a message by its ID. Requires admin authentication.
 
 ```
-curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:3006/api/messages/1
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:30001/api/messages/1
 ```
 
 Returns `200` if the message was deleted, or `404` if no message has that ID.
@@ -251,7 +256,7 @@ Delete several messages at once (up to 500). Requires admin authentication.
 
 ```
 curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"ids": [1, 2, 3]}' http://localhost:3006/api/messages
+  -d '{"ids": [1, 2, 3]}' http://localhost:30001/api/messages
 ```
 
 Response `200`: `{ "message": "Messages deleted successfully.", "deleted": 3 }`
@@ -266,8 +271,9 @@ See `sample.env` for a commented template.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3006` | Port the server listens on |
+| `PORT` | `30001` | Port the server listens on |
 | `INGEST_API_KEYS` | — | Required. Comma-separated `name:key` pairs accepted in `X-API-Key`. Keys must be at least 16 characters. |
+| `ADMIN_USERNAME` | `admin` | Dashboard username. Changing it signs out existing sessions. |
 | `ADMIN_PASSWORD` | — | Required. Dashboard password |
 | `SESSION_SECRET` | — | Required. At least 32 characters; signs session cookies |
 | `ADMIN_TOKEN` | — | Optional bearer token for scripts and tests (at least 16 characters) |
@@ -286,9 +292,8 @@ For every database type, the `messages` table is created automatically on startu
 
 ## Upgrading from 1.x
 
-- Authentication is now required. Add `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` to `.env`, and send `X-API-Key` from your applications. Use `AUTH_DISABLED=true` if you need the old open behaviour on a local machine.
+- Authentication is now required. Add `INGEST_API_KEYS`, `ADMIN_USERNAME` (optional, defaults to `admin`), `ADMIN_PASSWORD`, and `SESSION_SECRET` to `.env`, and send `X-API-Key` from your applications. Use `AUTH_DISABLED=true` if you need the old open behaviour on a local machine.
 - `GET /api/messages` returns masked phone numbers unless you pass `unmask=true`.
-- The default port when `PORT` isn't set is now `3006` (previously `30001`).
 - The unused `DATABASE_URL` setting has been removed.
 
 ## Troubleshooting

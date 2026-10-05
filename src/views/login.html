@@ -3,19 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign in - SMS Test Service</title>
+    <title>Sign in · SMS Test Service</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-    <div class="container login-container">
-        <h1>SMS Test Service</h1>
-        <form id="loginForm">
-            <label for="passwordInput">Admin password:</label>
-            <input type="password" id="passwordInput" autocomplete="current-password" required autofocus />
-            <p id="loginError" class="error-text" role="alert"></p>
-            <button type="submit">Sign in</button>
-        </form>
-    </div>
+<body class="login-page">
+    <main class="login-shell">
+        <section class="login-brand" aria-hidden="true">
+            <div class="brand-mark">
+                <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <h1>SMS Test Service</h1>
+            <p class="tagline">Catch every SMS your app sends, from OTPs to alerts, without texting a real phone.</p>
+            <ul class="brand-points">
+                <li>Point your SMS integration at one endpoint</li>
+                <li>Inspect, search and clean up captured messages</li>
+                <li>Read OTPs straight from your E2E tests</li>
+            </ul>
+        </section>
+
+        <section class="login-panel">
+            <form id="loginForm" class="login-card" novalidate>
+                <h2>Sign in</h2>
+                <p class="login-hint">Use the admin credentials from the server's <code>.env</code> file.</p>
+
+                <div class="field">
+                    <label for="usernameInput">Username</label>
+                    <input type="text" id="usernameInput" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus />
+                </div>
+
+                <div class="field">
+                    <label for="passwordInput">Password</label>
+                    <div class="password-wrap">
+                        <input type="password" id="passwordInput" autocomplete="current-password" required />
+                        <button type="button" id="togglePassword" class="icon-button" aria-label="Show password" aria-pressed="false">
+                            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <small id="capsLockHint" class="caps-hint hidden">Caps Lock is on</small>
+                </div>
+
+                <p id="loginError" class="login-error hidden" role="alert"></p>
+
+                <button type="submit" id="loginButton" class="primary block">Sign in</button>
+            </form>
+            <p class="login-footer">Forgot the credentials? They're set by <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code>.</p>
+        </section>
+    </main>
     <script src="login.js"></script>
 </body>
 </html>

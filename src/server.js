@@ -68,6 +68,10 @@ function createApp({ config, messageModel }) {
     };
     app.get('/', dashboard);
     app.get('/index.html', dashboard);
+    app.get('/login.html', (req, res) => {
+        if (auth.adminAuthMethod(req)) return res.redirect('/');
+        res.sendFile(path.join(viewsDir, 'login.html'));
+    });
     app.use(express.static(viewsDir, { index: false }));
 
     // Malformed JSON and oversized bodies come through here as 4xx errors from express.json

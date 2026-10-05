@@ -1,20 +1,14 @@
-// Auto-refresh the page only when it comes into focus after being blurred
-let shouldRefreshOnFocus = false;
-window.addEventListener('blur', () => {
-    shouldRefreshOnFocus = true;
-});
-window.addEventListener('focus', () => {
-    if (shouldRefreshOnFocus) {
-        shouldRefreshOnFocus = false;
-        reloadWithSavedParams();
-    }
-});
+// SMS Test Service dashboard. Message data is always rendered with textContent, never as HTML.
+
 let messages = [];
 let currentPage = 1;
 let pageSize = 10;
 let totalPages = 1;
+let selectedId = null;
 
-// --- Utility Functions ---
+const $ = id => document.getElementById(id);
+
+// --- Utilities ---
 
 // fetch wrapper: marks requests as same-origin script calls (required by the server for
 // cookie-authenticated writes) and sends the user to the login page when the session expires
@@ -27,49 +21,6 @@ async function apiFetch(url, options = {}) {
     }
     return response;
 }
-
-function truncateMessage(message, maxLength = 60) {
-    if (!message) return '';
-    const singleLine = message.replace(/[\r\n]+/g, ' ').trim();
-    if (singleLine.length <= maxLength) return singleLine;
-    return singleLine.slice(0, maxLength - 3) + '...';
-}
-
-function formatMessageTime(timestamp) {
-    const now = new Date();
-    const msgDate = new Date(timestamp);
-    const diffMs = now - msgDate;
-    const diffMin = Math.floor(diffMs / 60000);
-    const diffHr = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHr / 24);
-
-    if (diffDay < 1) {
-        if (diffHr >= 1) return `${diffHr} hour${diffHr > 1 ? 's' : ''} ago`;
-        if (diffMin >= 1) return `${diffMin} minute${diffMin > 1 ? 's' : ''} ago`;
-        return 'Just now';
-    } else if (diffDay < 7) {
-        return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`;
-    } else {
-        return msgDate.toLocaleDateString();
-    }
-}
-
-// Converts a YYYY-MM-DD value from a date input to an ISO timestamp for local midnight
-// (optionally the following midnight, so the end date is inclusive)
-function localDayToIso(value, nextDay = false) {
-    if (!value) return '';
-    const [y, m, d] = value.split('-').map(Number);
-    return new Date(y, m - 1, d + (nextDay ? 1 : 0)).toISOString();
-}
-
-function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-}
-
-// --- Developer Panel (test form + API reference) ---
 
 function readSetting(key, fallback) {
     try {
@@ -87,49 +38,46 @@ function saveSetting(key, value) {
     }
 }
 
-function setPanelVisible(visible) {
-    document.getElementById('devPanel').classList.toggle('hidden', !visible);
-    document.getElementById('mainContent').classList.toggle('no-panel', !visible);
-    const button = document.getElementById('togglePanelButton');
-    button.textContent = visible ? 'Hide tools' : 'Show tools';
-    button.setAttribute('aria-expanded', String(visible));
-    saveSetting('sms_panel_visible', visible ? 'yes' : 'no');
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
 }
 
-function selectTab(name) {
-    for (const tab of ['Send', 'Api']) {
-        const active = tab.toLowerCase() === name;
-        document.getElementById(`tab${tab}`).classList.toggle('active', active);
-        document.getElementById(`tab${tab}`).setAttribute('aria-selected', String(active));
-        document.getElementById(`panel${tab}`).classList.toggle('hidden', !active);
-    }
-    saveSetting('sms_panel_tab', name);
+function truncateMessage(message, maxLength = 120) {
+    if (!message) return '';
+    const singleLine = message.replace(/[\r\n]+/g, ' ').trim();
+    return singleLine.length <= maxLength ? singleLine : singleLine.slice(0, maxLength - 1) + '…';
 }
 
-// Fills the API reference with URLs for this server
-function renderApiReference() {
-    const base = location.origin;
-    const endpoint = document.getElementById('sendEndpoint');
-    endpoint.textContent = `${base}/api/messages`;
-    endpoint.title = endpoint.textContent;
-    document.getElementById('curlSend').textContent = [
-        `curl -X POST ${base}/api/messages \\`,
-        '  -H "Content-Type: application/json" \\',
-        '  -H "X-API-Key: $API_KEY" \\',
-        "  -d '{",
-        '    "sender": "MyApp",',
-        '    "phone": "+15551234567",',
-        '    "message": "Your OTP is 123456"',
-        "  }'",
-    ].join('\n');
-    document.getElementById('curlLatest').textContent = [
-        'curl -H "Authorization: Bearer $ADMIN_TOKEN" \\',
-        `  "${base}/api/messages/latest?phone=%2B15551234567"`,
-    ].join('\n');
+function formatMessageTime(timestamp) {
+    const msgDate = new Date(timestamp);
+    const diffMin = Math.floor((Date.now() - msgDate) / 60000);
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffMin < 1) return 'Just now';
+    if (diffHr < 1) return `${diffMin} min ago`;
+    if (diffDay < 1) return `${diffHr} h ago`;
+    if (diffDay < 7) return `${diffDay} d ago`;
+    return msgDate.toLocaleDateString();
 }
 
-async function copyFromElement(button) {
-    const text = document.getElementById(button.dataset.copy).textContent;
+// Converts a YYYY-MM-DD value from a date input to an ISO timestamp for local midnight
+// (optionally the following midnight, so the end date is inclusive)
+function localDayToIso(value, nextDay = false) {
+    if (!value) return '';
+    const [y, m, d] = value.split('-').map(Number);
+    return new Date(y, m - 1, d + (nextDay ? 1 : 0)).toISOString();
+}
+
+// First 4-8 digit number in a message, e.g. an OTP
+function extractCode(text) {
+    const match = (text || '').match(/\b\d{4,8}\b/);
+    return match ? match[0] : null;
+}
+
+async function copyText(text, button) {
     const original = button.textContent;
     try {
         await navigator.clipboard.writeText(text);
@@ -140,7 +88,271 @@ async function copyFromElement(button) {
     setTimeout(() => (button.textContent = original), 1500);
 }
 
-// --- Test Form Helpers ---
+// --- Navigation ---
+
+const VIEWS = ['messages', 'send', 'api'];
+const VIEW_TITLES = { messages: 'Messages', send: 'Send test', api: 'API reference' };
+
+function currentView() {
+    const name = location.hash.replace(/^#\/?/, '');
+    return VIEWS.includes(name) ? name : 'messages';
+}
+
+function showView() {
+    const view = currentView();
+    document.querySelectorAll('.view').forEach(section => section.classList.toggle('hidden', section.dataset.view !== view));
+    document.querySelectorAll('.sidebar-nav .nav-link').forEach(link => {
+        const active = link.dataset.view === view;
+        link.classList.toggle('active', active);
+        if (active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+    });
+    document.title = `${VIEW_TITLES[view]} · SMS Test Service`;
+    if (view === 'messages') reloadWithSavedParams();
+    if (view === 'send') $('phoneInput').value ? $('messageInput').focus() : $('senderInput').focus();
+}
+
+function setSidebarCollapsed(collapsed) {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    const button = $('collapseButton');
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    button.querySelector('.label').textContent = collapsed ? 'Expand' : 'Collapse';
+    saveSetting('sms_sidebar_collapsed', collapsed ? 'yes' : 'no');
+}
+
+async function loadSession() {
+    try {
+        const response = await fetch('/auth/status');
+        const status = await response.json();
+        $('currentUser').textContent = status.username || (status.authDisabled ? 'No sign-in' : 'admin');
+        $('authWarning').classList.toggle('hidden', !status.authDisabled);
+        $('logoutButton').classList.toggle('hidden', Boolean(status.authDisabled));
+    } catch {
+        // keep defaults
+    }
+}
+
+async function logout() {
+    try {
+        await apiFetch('/auth/logout', { method: 'POST' });
+    } finally {
+        window.location.href = '/login.html';
+    }
+}
+
+// --- Messages: loading and rendering ---
+
+function currentFilters() {
+    return {
+        searchInput: $('searchInput').value,
+        startDate: $('startDate').value,
+        endDate: $('endDate').value,
+    };
+}
+
+async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = '', startDate = '', endDate = '') {
+    saveSetting('sms_query_params', JSON.stringify({ page, pageSize: pageSizeParam, searchInput, startDate, endDate }));
+    try {
+        const queryParams = new URLSearchParams({ page, pageSize: pageSizeParam });
+        if (searchInput) queryParams.set('search', searchInput);
+        if (startDate) queryParams.set('from', localDayToIso(startDate));
+        if (endDate) queryParams.set('to', localDayToIso(endDate, true));
+
+        const response = await apiFetch(`/api/messages?${queryParams.toString()}`);
+        if (!response.ok) throw new Error(response.statusText);
+        const data = await response.json();
+        messages = data.messages || [];
+        currentPage = data.currentPage || page;
+        totalPages = data.totalPages || 1;
+        const filtered = Boolean(searchInput || startDate || endDate);
+        $('messageInfo').textContent = `${data.totalMessages} ${filtered ? 'matching' : 'total'}`;
+        if (!filtered) $('navCount').textContent = data.totalMessages || '';
+    } catch (error) {
+        messages = [];
+        totalPages = 1;
+        $('messageInfo').textContent = 'Could not load messages';
+    }
+    renderMessages();
+    updatePagination();
+}
+
+async function reloadCurrentPage() {
+    const { searchInput, startDate, endDate } = currentFilters();
+    await loadMessages(currentPage, pageSize, searchInput, startDate, endDate);
+}
+
+function renderMessages() {
+    const list = $('messageList');
+    list.replaceChildren();
+    $('selectAllCheckbox').checked = false;
+    updateSelectionInfo();
+
+    if (messages.length === 0) {
+        const filtered = Object.values(currentFilters()).some(Boolean);
+        list.appendChild(el('li', 'empty-state', filtered ? 'No messages match these filters.' : 'No messages yet. Send one from Send test, or call the API.'));
+        showDetails(null);
+        return;
+    }
+
+    if (!messages.some(m => m.id === selectedId)) selectedId = messages[0].id;
+
+    for (const msg of messages) {
+        const li = el('li', 'message-row');
+        li.dataset.id = String(msg.id);
+        if (msg.id === selectedId) li.classList.add('selected');
+        li.addEventListener('click', event => {
+            if (event.target.closest('.row-check')) return;
+            selectMessage(msg.id);
+        });
+
+        const check = el('input', 'message-checkbox');
+        check.type = 'checkbox';
+        check.dataset.id = String(msg.id);
+        check.setAttribute('aria-label', `Select message ${msg.id}`);
+        check.addEventListener('change', updateSelectionInfo);
+        const checkWrap = el('label', 'row-check');
+        checkWrap.appendChild(check);
+
+        const top = el('div', 'row-top');
+        top.appendChild(el('span', 'row-sender', msg.sender || 'No sender'));
+        top.appendChild(el('span', 'row-phone mono', msg.phone || ''));
+        top.appendChild(el('span', 'spacer'));
+        const time = el('time', 'row-time', msg.timestamp ? formatMessageTime(msg.timestamp) : '');
+        if (msg.timestamp) time.title = new Date(msg.timestamp).toLocaleString();
+        top.appendChild(time);
+
+        const body = el('div', 'row-body');
+        body.appendChild(top);
+        body.appendChild(el('div', 'row-text', truncateMessage(msg.message)));
+
+        li.appendChild(checkWrap);
+        li.appendChild(body);
+        list.appendChild(li);
+    }
+    showDetails(messages.find(m => m.id === selectedId));
+}
+
+function selectMessage(id) {
+    selectedId = id;
+    document.querySelectorAll('.message-row').forEach(row => row.classList.toggle('selected', row.dataset.id === String(id)));
+    showDetails(messages.find(m => m.id === id));
+}
+
+function showDetails(message) {
+    $('detailEmpty').classList.toggle('hidden', Boolean(message));
+    $('detailBody').classList.toggle('hidden', !message);
+    if (!message) return;
+
+    $('selectedMessageTitle').textContent = message.sender || 'No sender';
+    $('selectedMessageKey').textContent = message.apiKeyName ? `via ${message.apiKeyName}` : '';
+    $('selectedMessageKey').classList.toggle('hidden', !message.apiKeyName);
+    $('selectedMessageTimestamp').textContent = message.timestamp ? new Date(message.timestamp).toLocaleString() : '';
+    $('selectedMessagePhone').textContent = message.phone || '';
+    $('selectedMessageLength').textContent = `${(message.message || '').length} characters`;
+    $('selectedMessageText').textContent = message.message || '';
+
+    const code = extractCode(message.message);
+    $('copyCodeButton').classList.toggle('hidden', !code);
+    $('copyCodeButton').textContent = code ? `Copy code ${code}` : 'Copy code';
+    $('copyCodeButton').dataset.code = code || '';
+}
+
+// Up/down arrow keys move through the list
+function moveSelection(step) {
+    const idx = messages.findIndex(m => m.id === selectedId);
+    const next = messages[idx + step];
+    if (!next) return;
+    selectMessage(next.id);
+    const row = document.querySelector(`.message-row[data-id="${next.id}"]`);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+// --- Messages: pagination, filters, selection ---
+
+function updatePagination() {
+    $('prevPage').disabled = currentPage <= 1;
+    $('nextPage').disabled = currentPage >= totalPages;
+    $('pageInfo').textContent = `${currentPage} / ${totalPages}`;
+}
+
+async function changePage(direction) {
+    currentPage = Math.min(Math.max(1, currentPage + direction), totalPages);
+    await reloadCurrentPage();
+}
+
+async function changePageSize() {
+    pageSize = parseInt($('pageSizeSelect').value, 10);
+    currentPage = 1;
+    await reloadCurrentPage();
+}
+
+async function filterMessages() {
+    currentPage = 1;
+    await reloadCurrentPage();
+}
+
+async function resetFilters() {
+    $('searchInput').value = '';
+    $('startDate').value = '';
+    $('endDate').value = '';
+    await filterMessages();
+}
+
+function reloadWithSavedParams() {
+    try {
+        const saved = JSON.parse(readSetting('sms_query_params', 'null'));
+        if (saved) {
+            $('searchInput').value = saved.searchInput || '';
+            $('startDate').value = saved.startDate || '';
+            $('endDate').value = saved.endDate || '';
+            if (saved.pageSize) {
+                pageSize = saved.pageSize;
+                $('pageSizeSelect').value = saved.pageSize;
+            }
+            loadMessages(saved.page || 1, pageSize, saved.searchInput || '', saved.startDate || '', saved.endDate || '');
+            return;
+        }
+    } catch {
+        // fall through: load all
+    }
+    loadMessages(1, pageSize);
+}
+
+function selectedIds() {
+    return Array.from(document.querySelectorAll('.message-checkbox:checked')).map(c => Number(c.dataset.id));
+}
+
+function updateSelectionInfo() {
+    const count = selectedIds().length;
+    $('selectionInfo').textContent = count ? `${count} selected` : '';
+    $('deleteSelectedButton').disabled = count === 0;
+    $('selectAllCheckbox').checked = count > 0 && count === messages.length;
+}
+
+function toggleSelectAll(checked) {
+    document.querySelectorAll('.message-checkbox').forEach(c => (c.checked = checked));
+    updateSelectionInfo();
+}
+
+async function deleteSelectedMessages() {
+    const ids = selectedIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} message(s)? This can't be undone.`)) return;
+    try {
+        const response = await apiFetch('/api/messages', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        });
+        if (!response.ok) alert('Failed to delete the selected messages.');
+        await reloadCurrentPage();
+    } catch (error) {
+        alert('An error occurred while deleting the messages.');
+    }
+}
+
+// --- Send test ---
 
 const MAX_MESSAGE = 1600;
 const PHONE_RE = /^\+?[0-9]{6,15}$/;
@@ -155,16 +367,39 @@ function smsSegments(text) {
     return text.length <= single ? 1 : Math.ceil(text.length / multi);
 }
 
+function formValues() {
+    return {
+        sender: $('senderInput').value.trim(),
+        phone: $('phoneInput').value.trim(),
+        message: $('messageInput').value,
+    };
+}
+
 function updateMessageCounter() {
-    const text = document.getElementById('messageInput').value;
+    const text = $('messageInput').value;
     const segments = smsSegments(text);
-    document.getElementById('messageCounter').textContent =
-        `${text.length} / ${MAX_MESSAGE}` + (segments ? ` · ${segments} SMS` : '');
+    $('messageCounter').textContent = `${text.length} / ${MAX_MESSAGE}` + (segments ? ` · ${segments} SMS` : '');
+}
+
+// Shows the cURL command that would store the same message from outside the dashboard
+function updateEquivalentCurl() {
+    const { sender, phone, message } = formValues();
+    const body = JSON.stringify({ sender: sender || undefined, phone: phone || '+15551234567', message: message || 'Your OTP is 123456' }, null, 2)
+        .replace(/'/g, `'\\''`)
+        .split('\n')
+        .map((line, i) => (i === 0 ? line : `  ${line}`))
+        .join('\n');
+    $('equivalentCurl').textContent = [
+        `curl -X POST ${location.origin}/api/messages \\`,
+        '  -H "Content-Type: application/json" \\',
+        '  -H "X-API-Key: $API_KEY" \\',
+        `  -d '${body}'`,
+    ].join('\n');
 }
 
 function setFieldError(field, message) {
-    document.getElementById(`${field}Error`).textContent = message || '';
-    document.getElementById(`${field}Input`).classList.toggle('invalid', Boolean(message));
+    $(`${field}Error`).textContent = message || '';
+    $(`${field}Input`).classList.toggle('invalid', Boolean(message));
 }
 
 function clearFieldErrors() {
@@ -182,193 +417,34 @@ function validateForm({ sender, phone, message }) {
 }
 
 function setFormStatus(text, kind) {
-    const status = document.getElementById('formStatus');
-    status.textContent = text;
-    status.className = `form-status${kind ? ` ${kind}` : ''}`;
+    $('formStatus').textContent = text;
+    $('formStatus').className = `form-status${kind ? ` ${kind}` : ''}`;
 }
 
 function fillSampleOtp() {
     const otp = String(Math.floor(100000 + Math.random() * 900000));
-    const sender = document.getElementById('senderInput');
-    const phone = document.getElementById('phoneInput');
-    if (!sender.value) sender.value = 'MyApp';
-    if (!phone.value) phone.value = '+15551234567';
-    document.getElementById('messageInput').value = `Your verification code is ${otp}. It expires in 10 minutes.`;
-    updateMessageCounter();
+    if (!$('senderInput').value) $('senderInput').value = 'MyApp';
+    if (!$('phoneInput').value) $('phoneInput').value = '+15551234567';
+    $('messageInput').value = `Your verification code is ${otp}. It expires in 10 minutes.`;
     clearFieldErrors();
+    onFormInput();
 }
 
-// --- Message Loading and Rendering ---
-
-async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = '', startDate = '', endDate = '') {
-    saveSetting('sms_query_params', JSON.stringify({
-        page, pageSize: pageSizeParam, searchInput, startDate, endDate
-    }));
-    try {
-        const queryParams = new URLSearchParams({ page, pageSize: pageSizeParam });
-        if (searchInput) queryParams.set('search', searchInput);
-        if (startDate) queryParams.set('from', localDayToIso(startDate));
-        if (endDate) queryParams.set('to', localDayToIso(endDate, true));
-
-        const response = await apiFetch(`/api/messages?${queryParams.toString()}`);
-        if (response.ok) {
-            const responseData = await response.json();
-            messages = responseData.messages || [];
-            currentPage = responseData.currentPage || page;
-            totalPages = responseData.totalPages || 1;
-            renderMessages();
-            updatePagination(totalPages, currentPage);
-            document.getElementById('messageInfo').textContent = `${responseData.totalMessages} message(s)`;
-        } else {
-            messages = [];
-            renderMessages();
-            totalPages = 1;
-            updatePagination(totalPages, 1);
-        }
-    } catch (error) {
-        messages = [];
-        renderMessages();
-    }
+function onFormInput() {
+    updateMessageCounter();
+    updateEquivalentCurl();
 }
-
-function renderMessages() {
-    const messageList = document.getElementById('messageList');
-    messageList.replaceChildren();
-    document.getElementById('selectAllCheckbox').checked = false;
-
-    if (!messages || messages.length === 0) {
-        messageList.appendChild(el('p', null, 'No messages to display.'));
-        openMessageDetails(null);
-        return;
-    }
-
-    // Built with DOM APIs and textContent: message data is never interpreted as HTML
-    messages.forEach((msg, idx) => {
-        const li = el('li', 'message-row');
-        li.addEventListener('click', event => {
-            if (event.target.classList.contains('message-checkbox')) return;
-            document.querySelectorAll('.message-row').forEach(row => row.classList.remove('selected'));
-            li.classList.add('selected');
-            openMessageDetails(msg);
-        });
-
-        const checkbox = el('input', 'message-checkbox');
-        checkbox.type = 'checkbox';
-        checkbox.dataset.id = String(msg.id);
-        const checkboxContainer = el('div', 'checkbox-container');
-        checkboxContainer.appendChild(checkbox);
-
-        const details = el('div', 'message-details');
-        details.appendChild(el('strong', null, msg.timestamp ? formatMessageTime(msg.timestamp) : ''));
-        details.appendChild(el('em', 'message-recipient', `Sent to: ${msg.phone || ''}`));
-
-        const content = el('div', 'message-content-container');
-        content.appendChild(details);
-        content.appendChild(el('div', 'message-text', truncateMessage(msg.message || '', 60)));
-
-        const row = el('div', 'message-row-content');
-        row.appendChild(checkboxContainer);
-        row.appendChild(content);
-        li.appendChild(row);
-        messageList.appendChild(li);
-
-        if (idx === 0) {
-            li.classList.add('selected');
-            openMessageDetails(msg);
-        }
-    });
-}
-
-// --- Message Details ---
-
-function openMessageDetails(message) {
-    const sender = message && typeof message.sender === 'string' ? message.sender.trim() : '';
-    document.getElementById('selectedMessageTimestamp').textContent =
-        message && message.timestamp ? new Date(message.timestamp).toLocaleString() : '';
-    document.getElementById('selectedMessagePhone').textContent = (message && message.phone) || '';
-    document.getElementById('selectedMessageText').textContent = (message && message.message) || '';
-    document.getElementById('selectedMessageTitle').textContent = !message
-        ? 'Selected Message'
-        : `Sender: ${sender || '<no-sender-specified>'}`;
-}
-
-// --- Pagination ---
-
-function updatePagination(total = totalPages, page = currentPage) {
-    document.getElementById('prevPage').disabled = page <= 1;
-    document.getElementById('nextPage').disabled = page >= total;
-    document.getElementById('pageInfo').textContent = `Page ${page} of ${total}`;
-}
-
-function currentFilters() {
-    return {
-        searchInput: document.getElementById('searchInput').value,
-        startDate: document.getElementById('startDate').value,
-        endDate: document.getElementById('endDate').value,
-    };
-}
-
-async function reloadCurrentPage() {
-    const { searchInput, startDate, endDate } = currentFilters();
-    await loadMessages(currentPage, pageSize, searchInput, startDate, endDate);
-}
-
-async function changePage(direction) {
-    currentPage = Math.min(Math.max(1, currentPage + direction), totalPages);
-    await reloadCurrentPage();
-}
-
-async function changePageSize() {
-    pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
-    currentPage = 1;
-    await reloadCurrentPage();
-}
-
-// --- Filtering ---
-
-async function filterMessages() {
-    currentPage = 1;
-    await reloadCurrentPage();
-}
-
-function reloadWithSavedParams() {
-    const params = readSetting('sms_query_params', '');
-    if (params) {
-        try {
-            const { page, pageSize: ps, searchInput, startDate, endDate } = JSON.parse(params);
-            document.getElementById('searchInput').value = searchInput || '';
-            document.getElementById('startDate').value = startDate || '';
-            document.getElementById('endDate').value = endDate || '';
-            if (ps) {
-                pageSize = ps;
-                document.getElementById('pageSizeSelect').value = ps;
-            }
-            loadMessages(page || 1, ps || pageSize, searchInput || '', startDate || '', endDate || '');
-            return;
-        } catch (e) {
-            // fall through: load all
-        }
-    }
-    loadMessages(1, pageSize, '', '', '');
-}
-
-// --- Form and Misc ---
 
 function clearForm() {
-    document.getElementById('messageForm').reset();
+    $('messageForm').reset();
     clearFieldErrors();
     setFormStatus('');
-    updateMessageCounter();
+    onFormInput();
 }
 
 async function sendMessage(event) {
     event.preventDefault();
-    const values = {
-        sender: document.getElementById('senderInput').value.trim(),
-        phone: document.getElementById('phoneInput').value.trim(),
-        message: document.getElementById('messageInput').value,
-    };
-
+    const values = formValues();
     clearFieldErrors();
     const errors = validateForm(values);
     if (Object.keys(errors).length) {
@@ -377,7 +453,7 @@ async function sendMessage(event) {
         return;
     }
 
-    const button = document.getElementById('sendButton');
+    const button = $('sendButton');
     button.disabled = true;
     setFormStatus('Sending…');
     try {
@@ -387,14 +463,18 @@ async function sendMessage(event) {
             body: JSON.stringify(values),
         });
         const data = await response.json().catch(() => ({}));
+        $('lastResponse').textContent = `HTTP ${response.status}\n${JSON.stringify(data, null, 2)}`;
+        $('lastResponse').classList.remove('muted-code');
 
         if (response.ok) {
             setFormStatus(`Stored as message #${data.id}.`, 'success');
-            // Keep sender and phone so several messages can be sent in a row
-            document.getElementById('messageInput').value = '';
-            updateMessageCounter();
+            $('viewInMessages').classList.remove('hidden');
+            selectedId = data.id;
             currentPage = 1;
-            reloadCurrentPage();
+            // Keep sender and phone so several messages can be sent in a row
+            $('messageInput').value = '';
+            onFormInput();
+            $('messageInput').focus();
         } else if (data.details) {
             // Server messages read like "must be ..." / "is required"; prefix the field name
             Object.entries(data.details).forEach(([field, msg]) => {
@@ -412,93 +492,95 @@ async function sendMessage(event) {
     }
 }
 
-async function logout() {
-    try {
-        await apiFetch('/auth/logout', { method: 'POST' });
-    } finally {
-        window.location.href = '/login.html';
-    }
+// --- API reference ---
+
+function renderApiReference() {
+    const base = location.origin;
+    const endpoint = $('sendEndpoint');
+    endpoint.textContent = `${base}/api/messages`;
+    endpoint.title = endpoint.textContent;
+    $('curlSend').textContent = [
+        `curl -X POST ${base}/api/messages \\`,
+        '  -H "Content-Type: application/json" \\',
+        '  -H "X-API-Key: $API_KEY" \\',
+        "  -d '{",
+        '    "sender": "MyApp",',
+        '    "phone": "+15551234567",',
+        '    "message": "Your OTP is 123456"',
+        "  }'",
+    ].join('\n');
+    $('curlLatest').textContent = [
+        'curl -H "Authorization: Bearer $ADMIN_TOKEN" \\',
+        `  "${base}/api/messages/latest?phone=%2B15551234567"`,
+    ].join('\n');
+    $('jsLatest').textContent = [
+        `const res = await fetch('${base}/api/messages/latest?phone=%2B15551234567', {`,
+        '  headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },',
+        '});',
+        'const { message } = await res.json();',
+        'const otp = message.match(/\\b\\d{6}\\b/)[0];',
+    ].join('\n');
 }
 
-// --- Select All and Delete ---
-
-function toggleSelectAll(selectAllCheckbox) {
-    document.querySelectorAll('.message-checkbox').forEach(checkbox => {
-        checkbox.checked = selectAllCheckbox.checked;
-    });
-}
-
-async function deleteSelectedMessages() {
-    const selectedIds = Array.from(document.querySelectorAll('.message-checkbox:checked'))
-        .map(checkbox => Number(checkbox.dataset.id));
-
-    if (selectedIds.length === 0) {
-        alert('No messages selected for deletion.');
-        return;
-    }
-    if (!confirm(`Delete ${selectedIds.length} message(s)?`)) return;
-
-    try {
-        const response = await apiFetch('/api/messages', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: selectedIds }),
-        });
-        if (!response.ok) {
-            alert('Failed to delete the selected messages.');
-        }
-        await reloadCurrentPage();
-    } catch (error) {
-        alert('An error occurred while deleting the messages.');
-    }
-}
-
-// --- Event Listeners ---
+// --- Wiring ---
 
 window.addEventListener('DOMContentLoaded', () => {
-    setPanelVisible(readSetting('sms_panel_visible', 'yes') === 'yes');
-    selectTab(readSetting('sms_panel_tab', 'send') === 'api' ? 'api' : 'send');
+    setSidebarCollapsed(readSetting('sms_sidebar_collapsed', 'no') === 'yes');
+    loadSession();
     renderApiReference();
-    updateMessageCounter();
+    onFormInput();
 
-    document.getElementById('togglePanelButton').addEventListener('click', () =>
-        setPanelVisible(document.getElementById('devPanel').classList.contains('hidden'))
-    );
-    document.getElementById('tabSend').addEventListener('click', () => selectTab('send'));
-    document.getElementById('tabApi').addEventListener('click', () => selectTab('api'));
-    document.querySelectorAll('.copy-button').forEach(button =>
-        button.addEventListener('click', () => copyFromElement(button))
-    );
-    document.getElementById('logoutButton').addEventListener('click', logout);
-    document.getElementById('messageForm').addEventListener('submit', sendMessage);
-    document.getElementById('clearFormButton').addEventListener('click', clearForm);
-    document.getElementById('sampleOtpButton').addEventListener('click', fillSampleOtp);
-    document.getElementById('messageInput').addEventListener('input', updateMessageCounter);
-    ['sender', 'phone', 'message'].forEach(field =>
-        document.getElementById(`${field}Input`).addEventListener('input', () => setFieldError(field, ''))
-    );
-    document.getElementById('prevPage').addEventListener('click', () => changePage(-1));
-    document.getElementById('nextPage').addEventListener('click', () => changePage(1));
-    document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);
-    document.getElementById('deleteSelectedButton').addEventListener('click', deleteSelectedMessages);
-    document.getElementById('selectAllCheckbox').addEventListener('click', function () {
-        toggleSelectAll(this);
-    });
-    document.getElementById('searchButton').addEventListener('click', async function () {
-        const searchBtn = this;
-        searchBtn.disabled = true;
-        searchBtn.classList.add('button-disabled');
-        try {
-            await filterMessages();
-        } finally {
-            searchBtn.disabled = false;
-            searchBtn.classList.remove('button-disabled');
-        }
-    });
-    document.getElementById('searchInput').addEventListener('keydown', event => {
+    $('collapseButton').addEventListener('click', () => setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed')));
+    $('logoutButton').addEventListener('click', logout);
+
+    // Messages
+    $('searchButton').addEventListener('click', filterMessages);
+    $('searchInput').addEventListener('keydown', event => {
         if (event.key === 'Enter') filterMessages();
     });
+    $('startDate').addEventListener('change', filterMessages);
+    $('endDate').addEventListener('change', filterMessages);
+    $('resetFiltersButton').addEventListener('click', resetFilters);
+    $('refreshButton').addEventListener('click', reloadCurrentPage);
+    $('prevPage').addEventListener('click', () => changePage(-1));
+    $('nextPage').addEventListener('click', () => changePage(1));
+    $('pageSizeSelect').addEventListener('change', changePageSize);
+    $('selectAllCheckbox').addEventListener('change', event => toggleSelectAll(event.target.checked));
+    $('deleteSelectedButton').addEventListener('click', deleteSelectedMessages);
+    $('copyMessageButton').addEventListener('click', event => copyText($('selectedMessageText').textContent, event.target));
+    $('copyCodeButton').addEventListener('click', event => copyText(event.target.dataset.code, event.target));
+    document.addEventListener('keydown', event => {
+        if (currentView() !== 'messages' || event.target.matches('input, textarea, select')) return;
+        if (event.key === 'ArrowDown' || event.key === 'j') {
+            event.preventDefault();
+            moveSelection(1);
+        } else if (event.key === 'ArrowUp' || event.key === 'k') {
+            event.preventDefault();
+            moveSelection(-1);
+        }
+    });
 
-    // On first visit, show all messages (no filters). If params exist, restore them.
-    reloadWithSavedParams();
+    // Send test
+    $('messageForm').addEventListener('submit', sendMessage);
+    $('clearFormButton').addEventListener('click', clearForm);
+    $('sampleOtpButton').addEventListener('click', fillSampleOtp);
+    ['sender', 'phone', 'message'].forEach(field =>
+        $(`${field}Input`).addEventListener('input', () => {
+            setFieldError(field, '');
+            onFormInput();
+        })
+    );
+
+    // API reference
+    document.querySelectorAll('.copy-button').forEach(button =>
+        button.addEventListener('click', () => copyText($(button.dataset.copy).textContent, button))
+    );
+
+    // Refresh the list when the tab regains focus
+    window.addEventListener('focus', () => {
+        if (currentView() === 'messages') reloadCurrentPage();
+    });
+
+    window.addEventListener('hashchange', showView);
+    showView();
 });
