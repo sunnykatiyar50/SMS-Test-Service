@@ -21,10 +21,11 @@ function toInt(value, fallback) {
 
 function loadConfig(env = process.env) {
     const config = {
-        port: toInt(env.PORT, 3006),
+        port: toInt(env.PORT, 30001),
         authDisabled: env.AUTH_DISABLED === 'true',
         ingestApiKeys: parseApiKeys(env.INGEST_API_KEYS),
         adminToken: env.ADMIN_TOKEN || '',
+        adminUsername: (env.ADMIN_USERNAME || 'admin').trim(),
         adminPassword: env.ADMIN_PASSWORD || '',
         sessionSecret: env.SESSION_SECRET || '',
         sessionTtlHours: toInt(env.SESSION_TTL_HOURS, 12),
