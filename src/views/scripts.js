@@ -76,11 +76,11 @@ function localDayToIso(value, nextDay = false) {
 const MINUTE = 60 * 1000;
 const RANGES = {
     '10m': { ms: 10 * MINUTE, label: 'Last 10 minutes' },
-    '1h': { ms: 60 * MINUTE, label: 'Last hour' },
+    '1h': { ms: 60 * MINUTE, label: 'Last 1 hour' },
     '8h': { ms: 8 * 60 * MINUTE, label: 'Last 8 hours' },
-    '24h': { ms: 24 * 60 * MINUTE, label: 'Last 24 hours' },
-    '7d': { ms: 7 * 24 * 60 * MINUTE, label: 'Last 7 days' },
-    '30d': { ms: 30 * 24 * 60 * MINUTE, label: 'Last 30 days' },
+    '24h': { ms: 24 * 60 * MINUTE, label: 'Last 1 day' },
+    '7d': { ms: 7 * 24 * 60 * MINUTE, label: 'Last 1 week' },
+    '30d': { ms: 30 * 24 * 60 * MINUTE, label: 'Last 1 month' },
 };
 let timeRange = 'all'; // a RANGES key, 'all', or 'custom' (dates picked in the toolbar)
 

@@ -11,7 +11,7 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with sidebar navigation:
   - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
-  - Quick time range in the sidebar: last 10 minutes, hour, 8 hours, 24 hours, 7 days, 30 days, or all time
+  - Quick time range in the sidebar: Last 10 minutes, Last 1 hour, Last 8 hours, Last 1 day, Last 1 week, Last 1 month, or All time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
 - Sign-in page with username and password from `.env`
