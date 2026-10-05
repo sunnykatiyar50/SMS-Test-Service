@@ -8,55 +8,111 @@
 </head>
 <body>
     <div class="container">
-        <!-- Top Bar with Buttons -->
-        <div class="top-bar">
-            <button id="toggleFormButton">Test API Form</button>
-            <button id="toggleApiSettingsButton">API Settings</button>
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <h1>SMS Test Service</h1>
             <span class="spacer"></span>
+            <button id="togglePanelButton" class="ghost" aria-controls="devPanel">Hide tools</button>
             <button id="logoutButton" class="secondary">Sign out</button>
-        </div>
+        </header>
 
-        <h1>SMS Test Service</h1>
-        <div class="main-content">
-            <!-- Left Column: API Settings and Send Message Form -->
-            <div id="leftColumn" class="left-column">
-                <!-- API Settings -->
-                <div id="apiSettings" class="api-settings-container">
-                    <h2>API Settings</h2>
-                    <p>Use the following API endpoint to send messages from a third-party app:</p>
-                    <pre><code id="apiEndpoint">POST http://localhost:3006/api/messages</code></pre>
-                    <p>Headers:</p>
-                    <pre><code>Content-Type: application/json
-X-API-Key: &lt;one of the keys in INGEST_API_KEYS&gt;</code></pre>
-                    <p>Request Body (JSON):</p>
-                    <pre><code>{
-    "sender": "Your Name",
-    "phone": "1234567890",
-    "message": "Your message here"
-}</code></pre>
+        <div id="mainContent" class="main-content">
+            <!-- Developer panel: test form and API reference -->
+            <aside id="devPanel" class="dev-panel">
+                <div class="tabs" role="tablist">
+                    <button type="button" role="tab" id="tabSend" class="tab" aria-controls="panelSend">Send test</button>
+                    <button type="button" role="tab" id="tabApi" class="tab" aria-controls="panelApi">API reference</button>
                 </div>
-                <!-- Send Message Form -->
-                <div id="sendMessageForm" class="form-container">
-                    <form id="messageForm">
-                        <label for="senderInput">Sender:</label>
-                        <input type="text" id="senderInput" placeholder="Enter sender name" maxlength="64" required />
 
-                        <label for="phoneInput">Phone:</label>
-                        <input type="tel" id="phoneInput" placeholder="Enter phone number" required />
-
-                        <label for="messageInput">Message:</label>
-                        <textarea id="messageInput" placeholder="Enter your message" maxlength="1600" required></textarea>
-
-                        <div class="form-buttons">
-                            <button type="submit">Send Message</button>
-                            <button type="button" id="clearFormButton">Clear</button>
+                <!-- Send test message -->
+                <section id="panelSend" class="tab-panel" role="tabpanel" aria-labelledby="tabSend">
+                    <p class="hint">Stores a message as if your app had called the API. Nothing is sent to a real phone.</p>
+                    <form id="messageForm" novalidate>
+                        <div class="field-row">
+                            <div class="field">
+                                <label for="senderInput">Sender <span class="optional">optional</span></label>
+                                <input type="text" id="senderInput" placeholder="MyApp" maxlength="64" autocomplete="off" />
+                                <small class="field-error" id="senderError"></small>
+                            </div>
+                            <div class="field">
+                                <label for="phoneInput">Phone</label>
+                                <input type="tel" id="phoneInput" placeholder="+15551234567" autocomplete="off" />
+                                <small class="field-error" id="phoneError"></small>
+                            </div>
                         </div>
+                        <div class="field">
+                            <label for="messageInput">Message</label>
+                            <textarea id="messageInput" rows="5" maxlength="1600" placeholder="Your OTP is 123456"></textarea>
+                            <div class="field-meta">
+                                <small class="field-error" id="messageError"></small>
+                                <small id="messageCounter" class="counter">0 / 1600</small>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" id="sampleOtpButton" class="link-button">Fill sample OTP</button>
+                            <span class="spacer"></span>
+                            <button type="button" id="clearFormButton" class="ghost">Clear</button>
+                            <button type="submit" id="sendButton" class="primary">Send message</button>
+                        </div>
+                        <p id="formStatus" class="form-status" role="status"></p>
                     </form>
-                </div>
-            </div>
+                </section>
 
-            <!-- Right Column: Message Logs -->
-            <div id="messageLogs" class="message-list-container">
+                <!-- API reference -->
+                <section id="panelApi" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabApi">
+                    <h3>Send a message</h3>
+                    <div class="endpoint">
+                        <span class="method method-post">POST</span>
+                        <code id="sendEndpoint">/api/messages</code>
+                        <button type="button" class="copy-button" data-copy="sendEndpoint">Copy</button>
+                    </div>
+
+                    <h4>Headers</h4>
+                    <table class="ref-table">
+                        <tr><th>Content-Type</th><td><code>application/json</code></td></tr>
+                        <tr><th>X-API-Key</th><td>One of the keys in <code>INGEST_API_KEYS</code></td></tr>
+                    </table>
+
+                    <h4>Body</h4>
+                    <table class="ref-table">
+                        <tr><th>sender</th><td>Optional, up to 64 characters</td></tr>
+                        <tr><th>phone</th><td>Required. 6–15 digits, optional leading <code>+</code>. Spaces, dashes, dots and brackets are removed.</td></tr>
+                        <tr><th>message</th><td>Required, up to 1600 characters</td></tr>
+                    </table>
+
+                    <div class="code-header">
+                        <h4>Example</h4>
+                        <button type="button" class="copy-button" data-copy="curlSend">Copy</button>
+                    </div>
+                    <pre class="code" id="curlSend"></pre>
+
+                    <h4>Responses</h4>
+                    <table class="ref-table">
+                        <tr><th><span class="status ok">201</span></th><td>Stored. Returns <code>{ success, id, timestamp }</code></td></tr>
+                        <tr><th><span class="status err">400</span></th><td>Invalid input; <code>details</code> lists the problem per field</td></tr>
+                        <tr><th><span class="status err">401</span></th><td>Missing or unknown <code>X-API-Key</code></td></tr>
+                        <tr><th><span class="status err">429</span></th><td>Rate limit exceeded</td></tr>
+                    </table>
+
+                    <h3>Read messages from scripts and tests</h3>
+                    <p class="hint">Send <code>Authorization: Bearer &lt;ADMIN_TOKEN&gt;</code>. Phone numbers are masked unless you add <code>unmask=true</code>.</p>
+                    <table class="ref-table endpoints">
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages/latest?phone=…</code><br>Newest matching message, or 404</td></tr>
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages</code><br><code>search</code>, <code>phone</code>, <code>startDate</code>, <code>endDate</code>, <code>page</code>, <code>pageSize</code> (max 100)</td></tr>
+                        <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages/:id</code></td></tr>
+                        <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages</code> with <code>{ "ids": [1, 2] }</code></td></tr>
+                    </table>
+
+                    <div class="code-header">
+                        <h4>Read the latest OTP</h4>
+                        <button type="button" class="copy-button" data-copy="curlLatest">Copy</button>
+                    </div>
+                    <pre class="code" id="curlLatest"></pre>
+                </section>
+            </aside>
+
+            <!-- Message Logs -->
+            <section id="messageLogs" class="message-list-container">
                 <div class="filters">
                     <label for="startDate">Start Date:</label>
                     <input type="date" id="startDate" />
@@ -96,10 +152,10 @@ X-API-Key: &lt;one of the keys in INGEST_API_KEYS&gt;</code></pre>
                         </select>
                     </div>
                 </div>
-            </div>
+            </section>
 
             <!-- Selected Message -->
-            <div id="selectedMessageContainer" class="selected-message-container">
+            <section id="selectedMessageContainer" class="selected-message-container">
                 <h2 id="selectedMessageTitle">Selected Message</h2>
                 <hr class="selected-message-divider" />
                 <div id="selectedMessageDetails">
@@ -108,7 +164,7 @@ X-API-Key: &lt;one of the keys in INGEST_API_KEYS&gt;</code></pre>
                     <p class="selected-message-row"><strong>Message:</strong></p>
                     <div class="selected-message-row selected-message-html" id="selectedMessageText"></div>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
     <script src="scripts.js"></script>

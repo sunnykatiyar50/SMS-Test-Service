@@ -69,60 +69,139 @@ function el(tag, className, text) {
     return node;
 }
 
-// --- Section Visibility and Layout ---
+// --- Developer Panel (test form + API reference) ---
 
-function setSectionVisibility(sectionId, buttonId, visible, showText, hideText, storageKey) {
-    const section = document.getElementById(sectionId);
-    const button = document.getElementById(buttonId);
-    if (!section || !button) return;
-    section.classList.toggle('hidden', !visible);
-    button.textContent = visible ? hideText : showText;
-    localStorage.setItem(storageKey, visible ? 'visible' : 'hidden');
+function readSetting(key, fallback) {
+    try {
+        return localStorage.getItem(key) || fallback;
+    } catch {
+        return fallback;
+    }
 }
 
-function toggleForm() {
-    const form = document.getElementById('sendMessageForm');
-    const isVisible = !form.classList.contains('hidden');
-    setSectionVisibility(
-        'sendMessageForm',
-        'toggleFormButton',
-        !isVisible,
-        'Test API Form',
-        'Hide Form',
-        'sendMessageFormVisible'
-    );
-    checkAndHideLeftColumn();
+function saveSetting(key, value) {
+    try {
+        localStorage.setItem(key, value);
+    } catch {
+        // storage unavailable: the setting just isn't remembered
+    }
 }
 
-function toggleApiSettings() {
-    const api = document.getElementById('apiSettings');
-    const isVisible = !api.classList.contains('hidden');
-    setSectionVisibility(
-        'apiSettings',
-        'toggleApiSettingsButton',
-        !isVisible,
-        'Show API Settings',
-        'Hide API Settings',
-        'apiSettingsVisible'
-    );
-    checkAndHideLeftColumn();
+function setPanelVisible(visible) {
+    document.getElementById('devPanel').classList.toggle('hidden', !visible);
+    document.getElementById('mainContent').classList.toggle('no-panel', !visible);
+    const button = document.getElementById('togglePanelButton');
+    button.textContent = visible ? 'Hide tools' : 'Show tools';
+    button.setAttribute('aria-expanded', String(visible));
+    saveSetting('sms_panel_visible', visible ? 'yes' : 'no');
 }
 
-function checkAndHideLeftColumn() {
-    const leftColumn = document.getElementById('leftColumn');
-    const mainContent = document.querySelector('.main-content');
-    const hasVisibleContent = Array.from(leftColumn.children).some(
-        child => !child.classList.contains('hidden')
-    );
-    leftColumn.classList.toggle('hidden', !hasVisibleContent);
-    mainContent.classList.toggle('no-left-column', !hasVisibleContent);
+function selectTab(name) {
+    for (const tab of ['Send', 'Api']) {
+        const active = tab.toLowerCase() === name;
+        document.getElementById(`tab${tab}`).classList.toggle('active', active);
+        document.getElementById(`tab${tab}`).setAttribute('aria-selected', String(active));
+        document.getElementById(`panel${tab}`).classList.toggle('hidden', !active);
+    }
+    saveSetting('sms_panel_tab', name);
+}
+
+// Fills the API reference with URLs for this server
+function renderApiReference() {
+    const base = location.origin;
+    const endpoint = document.getElementById('sendEndpoint');
+    endpoint.textContent = `${base}/api/messages`;
+    endpoint.title = endpoint.textContent;
+    document.getElementById('curlSend').textContent = [
+        `curl -X POST ${base}/api/messages \\`,
+        '  -H "Content-Type: application/json" \\',
+        '  -H "X-API-Key: $API_KEY" \\',
+        "  -d '{",
+        '    "sender": "MyApp",',
+        '    "phone": "+15551234567",',
+        '    "message": "Your OTP is 123456"',
+        "  }'",
+    ].join('\n');
+    document.getElementById('curlLatest').textContent = [
+        'curl -H "Authorization: Bearer $ADMIN_TOKEN" \\',
+        `  "${base}/api/messages/latest?phone=%2B15551234567"`,
+    ].join('\n');
+}
+
+async function copyFromElement(button) {
+    const text = document.getElementById(button.dataset.copy).textContent;
+    const original = button.textContent;
+    try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = 'Copied';
+    } catch {
+        button.textContent = 'Copy failed';
+    }
+    setTimeout(() => (button.textContent = original), 1500);
+}
+
+// --- Test Form Helpers ---
+
+const MAX_MESSAGE = 1600;
+const PHONE_RE = /^\+?[0-9]{6,15}$/;
+
+// Rough SMS segment count: GSM-7 text fits 160 characters (153 per part when split),
+// anything outside ASCII forces UCS-2 with 70 (67 per part)
+function smsSegments(text) {
+    if (!text) return 0;
+    const unicode = /[^\x00-\x7F]/.test(text);
+    const single = unicode ? 70 : 160;
+    const multi = unicode ? 67 : 153;
+    return text.length <= single ? 1 : Math.ceil(text.length / multi);
+}
+
+function updateMessageCounter() {
+    const text = document.getElementById('messageInput').value;
+    const segments = smsSegments(text);
+    document.getElementById('messageCounter').textContent =
+        `${text.length} / ${MAX_MESSAGE}` + (segments ? ` · ${segments} SMS` : '');
+}
+
+function setFieldError(field, message) {
+    document.getElementById(`${field}Error`).textContent = message || '';
+    document.getElementById(`${field}Input`).classList.toggle('invalid', Boolean(message));
+}
+
+function clearFieldErrors() {
+    ['sender', 'phone', 'message'].forEach(field => setFieldError(field, ''));
+}
+
+// Same rules as the server, so most mistakes are caught before sending
+function validateForm({ sender, phone, message }) {
+    const errors = {};
+    if (sender.length > 64) errors.sender = 'At most 64 characters.';
+    if (!PHONE_RE.test(phone.replace(/[\s\-.()]/g, ''))) errors.phone = '6–15 digits, optional leading +.';
+    if (!message.trim()) errors.message = 'Enter a message.';
+    else if (message.length > MAX_MESSAGE) errors.message = `At most ${MAX_MESSAGE} characters.`;
+    return errors;
+}
+
+function setFormStatus(text, kind) {
+    const status = document.getElementById('formStatus');
+    status.textContent = text;
+    status.className = `form-status${kind ? ` ${kind}` : ''}`;
+}
+
+function fillSampleOtp() {
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const sender = document.getElementById('senderInput');
+    const phone = document.getElementById('phoneInput');
+    if (!sender.value) sender.value = 'MyApp';
+    if (!phone.value) phone.value = '+15551234567';
+    document.getElementById('messageInput').value = `Your verification code is ${otp}. It expires in 10 minutes.`;
+    updateMessageCounter();
+    clearFieldErrors();
 }
 
 // --- Message Loading and Rendering ---
 
 async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = '', startDate = '', endDate = '') {
-    // Save params to localStorage for reload/focus
-    localStorage.setItem('sms_query_params', JSON.stringify({
+    saveSetting('sms_query_params', JSON.stringify({
         page, pageSize: pageSizeParam, searchInput, startDate, endDate
     }));
     try {
@@ -253,7 +332,7 @@ async function filterMessages() {
 }
 
 function reloadWithSavedParams() {
-    const params = localStorage.getItem('sms_query_params');
+    const params = readSetting('sms_query_params', '');
     if (params) {
         try {
             const { page, pageSize: ps, searchInput, startDate, endDate } = JSON.parse(params);
@@ -277,34 +356,59 @@ function reloadWithSavedParams() {
 
 function clearForm() {
     document.getElementById('messageForm').reset();
+    clearFieldErrors();
+    setFormStatus('');
+    updateMessageCounter();
 }
 
 async function sendMessage(event) {
     event.preventDefault();
-    const sender = document.getElementById('senderInput').value;
-    const phone = document.getElementById('phoneInput').value;
-    const message = document.getElementById('messageInput').value;
+    const values = {
+        sender: document.getElementById('senderInput').value.trim(),
+        phone: document.getElementById('phoneInput').value.trim(),
+        message: document.getElementById('messageInput').value,
+    };
 
+    clearFieldErrors();
+    const errors = validateForm(values);
+    if (Object.keys(errors).length) {
+        Object.entries(errors).forEach(([field, msg]) => setFieldError(field, msg));
+        setFormStatus('Fix the highlighted fields.', 'error');
+        return;
+    }
+
+    const button = document.getElementById('sendButton');
+    button.disabled = true;
+    setFormStatus('Sending…');
     try {
         const response = await apiFetch('/api/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sender, phone, message }),
+            body: JSON.stringify(values),
         });
+        const data = await response.json().catch(() => ({}));
 
         if (response.ok) {
-            alert('Message sent successfully!');
+            setFormStatus(`Stored as message #${data.id}.`, 'success');
+            // Keep sender and phone so several messages can be sent in a row
+            document.getElementById('messageInput').value = '';
+            updateMessageCounter();
             currentPage = 1;
             reloadCurrentPage();
+        } else if (data.details) {
+            // Server messages read like "must be ..." / "is required"; prefix the field name
+            Object.entries(data.details).forEach(([field, msg]) => {
+                const label = field.charAt(0).toUpperCase() + field.slice(1);
+                setFieldError(field, `${label} ${msg}.`);
+            });
+            setFormStatus('The server rejected the message. See the highlighted fields.', 'error');
         } else {
-            const errorData = await response.json().catch(() => ({}));
-            const details = errorData.details
-                ? '\n' + Object.entries(errorData.details).map(([field, msg]) => `${field} ${msg}`).join('\n')
-                : '';
-            alert(`Failed to send message: ${errorData.error || response.statusText}${details}`);
+            setFormStatus(`Failed to send: ${data.error || response.statusText}`, 'error');
         }
     } catch (error) {
-        alert('An error occurred while sending the message.');
+        setFormStatus('Could not reach the server.', 'error');
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -352,32 +456,27 @@ async function deleteSelectedMessages() {
 // --- Event Listeners ---
 
 window.addEventListener('DOMContentLoaded', () => {
-    setSectionVisibility(
-        'sendMessageForm',
-        'toggleFormButton',
-        localStorage.getItem('sendMessageFormVisible') === 'visible',
-        'Test API Form',
-        'Hide Form',
-        'sendMessageFormVisible'
-    );
-    setSectionVisibility(
-        'apiSettings',
-        'toggleApiSettingsButton',
-        localStorage.getItem('apiSettingsVisible') === 'visible',
-        'Show API Settings',
-        'Hide API Settings',
-        'apiSettingsVisible'
-    );
-    checkAndHideLeftColumn();
+    setPanelVisible(readSetting('sms_panel_visible', 'yes') === 'yes');
+    selectTab(readSetting('sms_panel_tab', 'send') === 'api' ? 'api' : 'send');
+    renderApiReference();
+    updateMessageCounter();
 
-    // Dynamically set API endpoint hostname in API Settings
-    document.getElementById('apiEndpoint').textContent = `POST ${location.origin}/api/messages`;
-
-    document.getElementById('toggleFormButton').addEventListener('click', toggleForm);
-    document.getElementById('toggleApiSettingsButton').addEventListener('click', toggleApiSettings);
+    document.getElementById('togglePanelButton').addEventListener('click', () =>
+        setPanelVisible(document.getElementById('devPanel').classList.contains('hidden'))
+    );
+    document.getElementById('tabSend').addEventListener('click', () => selectTab('send'));
+    document.getElementById('tabApi').addEventListener('click', () => selectTab('api'));
+    document.querySelectorAll('.copy-button').forEach(button =>
+        button.addEventListener('click', () => copyFromElement(button))
+    );
     document.getElementById('logoutButton').addEventListener('click', logout);
     document.getElementById('messageForm').addEventListener('submit', sendMessage);
     document.getElementById('clearFormButton').addEventListener('click', clearForm);
+    document.getElementById('sampleOtpButton').addEventListener('click', fillSampleOtp);
+    document.getElementById('messageInput').addEventListener('input', updateMessageCounter);
+    ['sender', 'phone', 'message'].forEach(field =>
+        document.getElementById(`${field}Input`).addEventListener('input', () => setFieldError(field, ''))
+    );
     document.getElementById('prevPage').addEventListener('click', () => changePage(-1));
     document.getElementById('nextPage').addEventListener('click', () => changePage(1));
     document.getElementById('pageSizeSelect').addEventListener('change', changePageSize);

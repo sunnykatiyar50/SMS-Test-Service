@@ -9,7 +9,7 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - REST API to submit, list, search, and delete messages
 - API-key authentication for applications that submit messages, and a password-protected dashboard
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
-- Web interface with a test form, message list, text search (message, phone, and sender), date-range filter, pagination, and bulk delete
+- Web interface with a message list, text search (message, phone, and sender), date-range filter, pagination, and bulk delete, plus a tools panel with a test form and a built-in API reference with copyable cURL examples
 - Phone numbers are masked in API responses and the dashboard (only the last 4 digits are shown)
 - Input validation, rate limiting, security headers (CSP), and optional automatic cleanup of old messages
 - Application logs written to `logs/app.log` and stdout, rotated daily. Message text is never logged.
@@ -100,7 +100,7 @@ sms-test-service
 
 2. Open `http://localhost:3006` in your browser (or whichever `PORT` you set) and sign in with `ADMIN_PASSWORD`.
 
-3. Click **Test API Form** to send a test message, or send messages from your own application through the API with an `X-API-Key` header. Messages appear in the list, newest first.
+3. Use the **Send test** tab in the tools panel to store a test message, or send messages from your own application through the API with an `X-API-Key` header (the **API reference** tab has ready-to-copy examples for this server). Messages appear in the list, newest first.
 
 To run the tests:
 ```
