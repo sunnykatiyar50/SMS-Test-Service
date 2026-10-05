@@ -33,6 +33,26 @@
             </a>
         </nav>
 
+        <!-- Quick time range for the Messages view -->
+        <div class="sidebar-section">
+            <label for="rangeSelect" class="sidebar-label label">Show messages from</label>
+            <div class="range-control">
+                <span id="rangeIconButton" class="nav-link range-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </span>
+                <select id="rangeSelect" class="range-select label">
+                    <option value="all">All time</option>
+                    <option value="10m">Last 10 minutes</option>
+                    <option value="1h">Last 1 hour</option>
+                    <option value="8h">Last 8 hours</option>
+                    <option value="24h">Last 1 day</option>
+                    <option value="7d">Last 1 week</option>
+                    <option value="30d">Last 1 month</option>
+                    <option value="custom" disabled>Custom dates</option>
+                </select>
+            </div>
+        </div>
+
         <div class="sidebar-footer">
             <div id="authWarning" class="auth-warning label hidden">Authentication is disabled</div>
             <div class="nav-link static" title="Signed in user">
@@ -57,6 +77,10 @@
                 <div class="view-title">
                     <h1>Messages</h1>
                     <span id="messageInfo" class="muted"></span>
+                    <button type="button" id="rangeChip" class="filter-chip hidden" title="Clear time range">
+                        <span id="rangeChipText"></span>
+                        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                 </div>
                 <div class="toolbar">
                     <input type="search" id="searchInput" placeholder="Search text, phone, sender" aria-label="Search" />
@@ -96,6 +120,9 @@
                         </label>
                     </div>
                 </div>
+
+                <div id="paneResizer" class="pane-resizer" role="separator" aria-orientation="vertical"
+                     aria-label="Resize message pane" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
                 <aside id="selectedMessageContainer" class="detail-pane">
                     <div id="detailEmpty" class="empty-state">Select a message to see its details.</div>
@@ -219,7 +246,7 @@
                     <h3>Read messages from scripts and tests</h3>
                     <p class="hint">Send <code>Authorization: Bearer &lt;ADMIN_TOKEN&gt;</code>. Phone numbers are masked unless you add <code>unmask=true</code>.</p>
                     <table class="ref-table endpoints">
-                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages/latest?phone=…</code><br>Newest matching message, or 404</td></tr>
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages/latest?phone=…</code><br>Newest matching message, or 404. Includes <code>code</code>: the detected OTP, or <code>null</code></td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages</code><br><code>search</code>, <code>phone</code>, <code>startDate</code>, <code>endDate</code>, <code>page</code>, <code>pageSize</code> (max 100)</td></tr>
                         <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages/:id</code></td></tr>
                         <tr><th><span class="method method-delete">DELETE</span></th><td><code>/api/messages</code> with <code>{ "ids": [1, 2] }</code></td></tr>

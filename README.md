@@ -10,7 +10,8 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - API-key authentication for applications that submit messages, and a password-protected dashboard
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with sidebar navigation:
-  - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a detail pane with one-click "Copy code" for OTPs
+  - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
+  - Quick time range in the sidebar: Last 10 minutes, Last 1 hour, Last 8 hours, Last 1 day, Last 1 week, Last 1 month, or All time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
 - Sign-in page with username and password from `.env`
@@ -64,7 +65,7 @@ sms-test-service
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20 or later (tested with Node.js 24) and npm
+- [Node.js](https://nodejs.org/) 22.13 or later (tested with Node.js 22 and 24) and npm. SQLite support is built into Node, so there are no native modules to compile and the same install works on Windows, WSL, Linux, and macOS.
 - Optional: a PostgreSQL or MySQL server, if you don't want to use SQLite
 
 ## Installation
@@ -126,6 +127,34 @@ To turn off authentication completely for local development, set `AUTH_DISABLED=
 
 ## Running with Docker
 
+### Prebuilt image
+
+A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Node 22 and 24, then builds the image for `linux/amd64` and `linux/arm64` and publishes it to GitHub Container Registry:
+
+| Event | Tags |
+|-------|------|
+| Push to `main` | `latest`, `sha-<commit>` |
+| Push a tag such as `v2.1.0` | `2.1.0`, `2.1`, `2`, `sha-<commit>` |
+| Pull request | Builds the image to check it, but doesn't publish |
+
+```
+docker pull ghcr.io/sunnykatiyar50/sms-test-service:latest
+docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001 --init \
+  --name sms-test-service ghcr.io/sunnykatiyar50/sms-test-service:latest
+```
+
+To use it with Compose instead of building locally, change `image:` in `docker-compose.yml` to `ghcr.io/sunnykatiyar50/sms-test-service:latest` and run `docker compose pull && docker compose up -d`.
+
+New packages on GitHub Container Registry are private. To let anyone pull without logging in, open the package on GitHub (your profile → **Packages** → `sms-test-service` → **Package settings**) and change its visibility to **Public**. To pull a private image, first run `docker login ghcr.io` with a personal access token that has the `read:packages` scope.
+
+To publish a versioned release:
+```
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+### Building locally
+
 Requires Docker with the Compose plugin, version 2.24 or later. Set `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` in `.env` first. Compose refuses to start without them.
 
 With SQLite (default):
@@ -157,9 +186,6 @@ docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001
 `-e PORT=30001` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:30001`.
 
 Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
-
-The image builds `sqlite3` from source if no prebuilt binary is available for your platform. The build tools for that are only used during the build and are not in the final image.
-
 If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
 
 ## API Endpoints
@@ -215,13 +241,20 @@ Response `200`:
 ```json
 {
   "messages": [
-    { "id": 1, "sender": "MyApp", "phone": "*******4567", "message": "Your OTP is 123456", "timestamp": "2026-01-01T10:00:00.000Z", "apiKeyName": "myapp" }
+    { "id": 1, "sender": "MyApp", "phone": "*******4567", "message": "Your OTP is 123456", "timestamp": "2026-01-01T10:00:00.000Z", "apiKeyName": "myapp", "code": "123456" }
   ],
   "totalPages": 1,
   "totalMessages": 1,
   "currentPage": 1
 }
 ```
+
+Every message in API responses includes `code`: the one-time code detected in the text, or `null`. Detection handles:
+- plain codes of 4–8 digits, with the keyword before or after them ("123456 is your code");
+- split codes like `123-456` or `123 456` (returned as `123456`), Google-style `G-123456`, and letter codes like `AB12CD`;
+- keywords in several languages (OTP, code, passcode, PIN, código, код, ओटीपी, 验证码, …).
+
+Amounts (`Rs 5,000`), order, transaction and reference numbers, dates, times, and phone numbers are ignored.
 
 ### `GET /api/messages/latest`
 
@@ -236,8 +269,7 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:30001/api/message
 const res = await fetch(`${SMS_URL}/api/messages/latest?phone=15551234567`, {
   headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },
 });
-const { message } = await res.json();
-const otp = message.match(/\b\d{6}\b/)[0];
+const { code } = await res.json(); // e.g. "123456"
 ```
 
 ### `DELETE /api/messages/:id`
@@ -302,6 +334,8 @@ For every database type, the `messages` table is created automatically on startu
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
 - **`401 Invalid API key`:** the `X-API-Key` value doesn't match any key in `INGEST_API_KEYS`. Restart the server after changing `.env`.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
+- **`invalid ELF header` or `not a valid Win32 application` mentioning `node_sqlite3.node`:** a `node_modules` folder from an older version still contains the native `sqlite3` module, built for another OS (for example installed on Windows and started from WSL). Current versions don't use it. Delete `node_modules` and run `npm install` again.
+- **`SQLite is an experimental feature` warning on Node 22:** harmless. The npm scripts already hide it; it only appears if you start the app with plain `node src/app.js`.
 
 ## Contributing
 

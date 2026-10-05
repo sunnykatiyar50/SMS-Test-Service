@@ -71,10 +71,36 @@ function localDayToIso(value, nextDay = false) {
     return new Date(y, m - 1, d + (nextDay ? 1 : 0)).toISOString();
 }
 
-// First 4-8 digit number in a message, e.g. an OTP
-function extractCode(text) {
-    const match = (text || '').match(/\b\d{4,8}\b/);
-    return match ? match[0] : null;
+// --- Quick time ranges (sidebar) ---
+
+const MINUTE = 60 * 1000;
+const RANGES = {
+    '10m': { ms: 10 * MINUTE, label: 'Last 10 minutes' },
+    '1h': { ms: 60 * MINUTE, label: 'Last 1 hour' },
+    '8h': { ms: 8 * 60 * MINUTE, label: 'Last 8 hours' },
+    '24h': { ms: 24 * 60 * MINUTE, label: 'Last 1 day' },
+    '7d': { ms: 7 * 24 * 60 * MINUTE, label: 'Last 1 week' },
+    '30d': { ms: 30 * 24 * 60 * MINUTE, label: 'Last 1 month' },
+};
+let timeRange = 'all'; // a RANGES key, 'all', or 'custom' (dates picked in the toolbar)
+
+// Keeps the sidebar dropdown and the header chip in sync with the current range
+function renderRange() {
+    $('rangeSelect').value = timeRange;
+    const range = RANGES[timeRange];
+    $('rangeChip').classList.toggle('hidden', !range);
+    $('rangeChipText').textContent = range ? range.label : '';
+    $('rangeIconButton').classList.toggle('active', timeRange !== 'all');
+}
+
+async function setTimeRange(value) {
+    timeRange = RANGES[value] ? value : 'all';
+    // A quick range replaces any picked dates
+    $('startDate').value = '';
+    $('endDate').value = '';
+    renderRange();
+    if (currentView() !== 'messages') location.hash = '#/messages';
+    else await filterMessages();
 }
 
 async function copyText(text, button) {
@@ -152,12 +178,16 @@ function currentFilters() {
 }
 
 async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = '', startDate = '', endDate = '') {
-    saveSetting('sms_query_params', JSON.stringify({ page, pageSize: pageSizeParam, searchInput, startDate, endDate }));
+    saveSetting('sms_query_params', JSON.stringify({ page, pageSize: pageSizeParam, searchInput, startDate, endDate, timeRange }));
     try {
         const queryParams = new URLSearchParams({ page, pageSize: pageSizeParam });
         if (searchInput) queryParams.set('search', searchInput);
         if (startDate) queryParams.set('from', localDayToIso(startDate));
         if (endDate) queryParams.set('to', localDayToIso(endDate, true));
+        // Relative ranges are recalculated on every load, so the window keeps sliding
+        if (!startDate && !endDate && RANGES[timeRange]) {
+            queryParams.set('from', new Date(Date.now() - RANGES[timeRange].ms).toISOString());
+        }
 
         const response = await apiFetch(`/api/messages?${queryParams.toString()}`);
         if (!response.ok) throw new Error(response.statusText);
@@ -165,7 +195,7 @@ async function loadMessages(page = 1, pageSizeParam = pageSize, searchInput = ''
         messages = data.messages || [];
         currentPage = data.currentPage || page;
         totalPages = data.totalPages || 1;
-        const filtered = Boolean(searchInput || startDate || endDate);
+        const filtered = Boolean(searchInput || startDate || endDate || RANGES[timeRange]);
         $('messageInfo').textContent = `${data.totalMessages} ${filtered ? 'matching' : 'total'}`;
         if (!filtered) $('navCount').textContent = data.totalMessages || '';
     } catch (error) {
@@ -189,7 +219,7 @@ function renderMessages() {
     updateSelectionInfo();
 
     if (messages.length === 0) {
-        const filtered = Object.values(currentFilters()).some(Boolean);
+        const filtered = Object.values(currentFilters()).some(Boolean) || Boolean(RANGES[timeRange]);
         list.appendChild(el('li', 'empty-state', filtered ? 'No messages match these filters.' : 'No messages yet. Send one from Send test, or call the API.'));
         showDetails(null);
         return;
@@ -252,7 +282,8 @@ function showDetails(message) {
     $('selectedMessageLength').textContent = `${(message.message || '').length} characters`;
     $('selectedMessageText').textContent = message.message || '';
 
-    const code = extractCode(message.message);
+    // The server detects the code (see src/utils/otp.js) and returns it as `code`
+    const code = message.code;
     $('copyCodeButton').classList.toggle('hidden', !code);
     $('copyCodeButton').textContent = code ? `Copy code ${code}` : 'Copy code';
     $('copyCodeButton').dataset.code = code || '';
@@ -266,6 +297,69 @@ function moveSelection(step) {
     selectMessage(next.id);
     const row = document.querySelector(`.message-row[data-id="${next.id}"]`);
     if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+// --- Resizable message pane ---
+
+const DEFAULT_DETAIL_RATIO = 0.42;
+const MIN_DETAIL_PX = 300;
+const MIN_LIST_PX = 360;
+
+// The detail pane width is stored as a share of the layout, so it adapts when the window is resized
+function applyDetailRatio(ratio) {
+    const layout = document.querySelector('.messages-layout');
+    const width = layout.getBoundingClientRect().width;
+    if (!width) return;
+    const px = Math.min(Math.max(ratio * width, MIN_DETAIL_PX), Math.max(MIN_DETAIL_PX, width - MIN_LIST_PX));
+    layout.style.setProperty('--detail-width', `${Math.round(px)}px`);
+    $('paneResizer').setAttribute('aria-valuenow', String(Math.round((px / width) * 100)));
+}
+
+function initPaneResizer() {
+    const layout = document.querySelector('.messages-layout');
+    const resizer = $('paneResizer');
+    let ratio = parseFloat(readSetting('sms_detail_ratio', '')) || DEFAULT_DETAIL_RATIO;
+    const apply = () => applyDetailRatio(ratio);
+    const save = () => saveSetting('sms_detail_ratio', ratio.toFixed(3));
+    resizer.setAttribute('aria-valuemin', '20');
+    resizer.setAttribute('aria-valuemax', '75');
+
+    resizer.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        resizer.setPointerCapture(event.pointerId);
+        document.body.classList.add('resizing');
+        const onMove = moveEvent => {
+            const rect = layout.getBoundingClientRect();
+            ratio = Math.min(Math.max((rect.right - moveEvent.clientX) / rect.width, 0.2), 0.75);
+            apply();
+        };
+        const onUp = () => {
+            resizer.removeEventListener('pointermove', onMove);
+            resizer.removeEventListener('pointerup', onUp);
+            resizer.removeEventListener('pointercancel', onUp);
+            document.body.classList.remove('resizing');
+            save();
+        };
+        resizer.addEventListener('pointermove', onMove);
+        resizer.addEventListener('pointerup', onUp);
+        resizer.addEventListener('pointercancel', onUp);
+    });
+    // Keyboard: arrow keys resize in 2% steps
+    resizer.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        ratio = Math.min(Math.max(ratio + (event.key === 'ArrowLeft' ? 0.02 : -0.02), 0.2), 0.75);
+        apply();
+        save();
+    });
+    resizer.addEventListener('dblclick', () => {
+        ratio = DEFAULT_DETAIL_RATIO;
+        apply();
+        save();
+    });
+    window.addEventListener('resize', apply);
+    window.addEventListener('hashchange', () => requestAnimationFrame(apply));
+    apply();
 }
 
 // --- Messages: pagination, filters, selection ---
@@ -296,6 +390,16 @@ async function resetFilters() {
     $('searchInput').value = '';
     $('startDate').value = '';
     $('endDate').value = '';
+    timeRange = 'all';
+    renderRange();
+    await filterMessages();
+}
+
+// Picking dates in the toolbar switches the sidebar range to "Custom dates"
+async function onDateChange() {
+    const hasDates = Boolean($('startDate').value || $('endDate').value);
+    timeRange = hasDates ? 'custom' : 'all';
+    renderRange();
     await filterMessages();
 }
 
@@ -306,6 +410,8 @@ function reloadWithSavedParams() {
             $('searchInput').value = saved.searchInput || '';
             $('startDate').value = saved.startDate || '';
             $('endDate').value = saved.endDate || '';
+            timeRange = RANGES[saved.timeRange] || saved.timeRange === 'custom' ? saved.timeRange : 'all';
+            renderRange();
             if (saved.pageSize) {
                 pageSize = saved.pageSize;
                 $('pageSizeSelect').value = saved.pageSize;
@@ -517,8 +623,7 @@ function renderApiReference() {
         `const res = await fetch('${base}/api/messages/latest?phone=%2B15551234567', {`,
         '  headers: { Authorization: `Bearer ${process.env.ADMIN_TOKEN}` },',
         '});',
-        'const { message } = await res.json();',
-        'const otp = message.match(/\\b\\d{6}\\b/)[0];',
+        'const { code, message } = await res.json(); // code: the detected OTP, or null',
     ].join('\n');
 }
 
@@ -538,8 +643,11 @@ window.addEventListener('DOMContentLoaded', () => {
     $('searchInput').addEventListener('keydown', event => {
         if (event.key === 'Enter') filterMessages();
     });
-    $('startDate').addEventListener('change', filterMessages);
-    $('endDate').addEventListener('change', filterMessages);
+    $('startDate').addEventListener('change', onDateChange);
+    $('endDate').addEventListener('change', onDateChange);
+    $('rangeSelect').addEventListener('change', event => setTimeRange(event.target.value));
+    $('rangeChip').addEventListener('click', () => setTimeRange('all'));
+    initPaneResizer();
     $('resetFiltersButton').addEventListener('click', resetFilters);
     $('refreshButton').addEventListener('click', reloadCurrentPage);
     $('prevPage').addEventListener('click', () => changePage(-1));

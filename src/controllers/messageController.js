@@ -1,5 +1,6 @@
 const { logToFile } = require('../utils/logger');
 const { maskPhoneNumber } = require('../utils/mask');
+const { extractOtp } = require('../utils/otp');
 
 // Only metadata is logged; message bodies (often OTPs) never reach the log file
 const describe = ({ phone, message }) => `phone=${maskPhoneNumber(phone)} length=${message.length}`;
@@ -9,8 +10,13 @@ class MessageController {
         this.messageModel = messageModel;
     }
 
+    // Adds the detected one-time code and masks the phone number unless asked not to
     present(message, unmask) {
-        return unmask ? message : { ...message, phone: maskPhoneNumber(message.phone) };
+        return {
+            ...message,
+            phone: unmask ? message.phone : maskPhoneNumber(message.phone),
+            code: extractOtp(message.message),
+        };
     }
 
     async sendMessage(req, res) {
