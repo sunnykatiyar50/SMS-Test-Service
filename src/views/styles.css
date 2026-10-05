@@ -8,7 +8,7 @@
     margin-bottom: 10px;
     line-height: 1.35em;
     word-break: break-word;
-    white-space: pre-line;
+    white-space: pre-wrap;
     font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', 'Liberation Mono', 'Courier New', monospace;
 }
 h2#selectedMessageTitle {
@@ -412,4 +412,37 @@ button[type="submit"]:hover {
 /* --- Utility --- */
 .hidden {
     display: none !important;
+}
+/* --- Top bar: logout aligned right --- */
+.top-bar .spacer {
+    flex: 1;
+}
+
+.select-all-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.secondary {
+    background-color: #6c757d;
+}
+
+.secondary:hover {
+    background-color: #545b62;
+}
+
+.error-text {
+    color: #c62828;
+    min-height: 1.2em;
+    margin: 0;
+}
+
+/* --- Login page --- */
+.login-container {
+    max-width: 360px;
+}
+
+.message-recipient {
+    margin-left: 24px;
 }

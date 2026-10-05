@@ -1,28 +1,45 @@
 require('dotenv').config();
-require('./database/initDatabase'); // Use new unified DB initializer
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const messageRoutes = require('./routes/messageRoutes');
+const { loadConfig } = require('./config');
+const initializeDatabase = require('./database/initDatabase');
+const MessageModel = require('./models/messageModel');
+const { createApp } = require('./server');
 const { logToFile } = require('./utils/logger');
 
-const app = express();
-const PORT = process.env.PORT || 30001;
+const HOUR_MS = 60 * 60 * 1000;
 
-// Middleware
-app.use(bodyParser.json());
-app.use(express.static('src/views')); // Serve static files from the views folder
+function scheduleRetention(messageModel, retentionDays) {
+    if (!retentionDays) return;
+    const purge = async () => {
+        try {
+            const cutoff = new Date(Date.now() - retentionDays * 24 * HOUR_MS);
+            const deleted = await messageModel.deleteOlderThan(cutoff);
+            if (deleted) logToFile(`Retention: deleted ${deleted} message(s) older than ${retentionDays} day(s)`);
+        } catch (error) {
+            logToFile(`Retention cleanup failed: ${error.message}`);
+        }
+    };
+    purge();
+    setInterval(purge, HOUR_MS).unref();
+}
 
-// Routes
-app.use('/api/messages', messageRoutes);
+async function main() {
+    const config = loadConfig();
+    if (config.authDisabled) {
+        logToFile('WARNING: AUTH_DISABLED=true - the API and dashboard are open to anyone who can reach this server');
+    }
 
-// Serve the main page
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/views/index.html');
-});
+    const db = await initializeDatabase();
+    const messageModel = new MessageModel(db);
+    scheduleRetention(messageModel, config.retentionDays);
 
-// Start the server
-app.listen(PORT, () => {
-    // Use your logger if desired
-    logToFile(`Server is running on http://localhost:${PORT}`);
+    const app = createApp({ config, messageModel });
+    app.listen(config.port, () => {
+        logToFile(`Server is running on http://localhost:${config.port}`);
+    });
+}
+
+main().catch(error => {
+    logToFile(`Startup failed: ${error.stack || error}`);
+    process.exit(1);
 });

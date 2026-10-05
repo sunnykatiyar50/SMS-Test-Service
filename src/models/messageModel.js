@@ -1,117 +1,94 @@
-const initializeDatabase = require('../database/initDatabase');
-const { logToFile } = require('../utils/logger');
+const COLUMNS = 'id, sender, phone, message, timestamp, api_key_name';
+
+function toIso(value) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+}
+
+function toMessage(row) {
+    return {
+        id: Number(row.id),
+        sender: row.sender,
+        phone: row.phone,
+        message: row.message,
+        timestamp: toIso(row.timestamp),
+        apiKeyName: row.api_key_name || null,
+    };
+}
 
 class MessageModel {
-    constructor() {
-        this.db = null;
-        this.init();
+    // db is the adapter returned by database/initDatabase.js
+    constructor(db) {
+        this.db = db;
     }
 
-    async init() {
-        try {
-            this.db = await initializeDatabase();
-        } catch (error) {
-            logToFile(`Database initialization failed: ${error.stack || error}`);
-            console.error('Database initialization failed:', error);
-        }
-    }
-
-    async getMessages({ search = '', startDate, endDate } = {}) {
-        if (!this.db) throw new Error('Database not initialized');
-
-        let query = 'SELECT * FROM messages WHERE 1=1';
+    buildFilters({ search, phone, from, to } = {}) {
+        const clauses = [];
         const params = [];
-
         if (search) {
-            query += ' AND message LIKE ?';
-            params.push(`%${search}%`);
+            clauses.push('(LOWER(message) LIKE ? OR LOWER(phone) LIKE ? OR LOWER(sender) LIKE ?)');
+            const like = `%${search.toLowerCase()}%`;
+            params.push(like, like, like);
         }
-        if (startDate) {
-            // Start of the day
-            query += ' AND timestamp >= ?';
-            params.push(startDate + ' 00:00:00');
+        if (phone) {
+            clauses.push('phone = ?');
+            params.push(phone);
         }
-        if (endDate) {
-            // End of the day (exclusive)
-            // Add 1 day to endDate and use < next day 00:00:00
-            let endDateObj = new Date(endDate);
-            endDateObj.setDate(endDateObj.getDate() + 1);
-            const nextDay = endDateObj.toISOString().split('T')[0];
-            query += ' AND timestamp < ?';
-            params.push(nextDay + ' 00:00:00');
+        if (from) {
+            clauses.push('timestamp >= ?');
+            params.push(from);
         }
-        query += ' ORDER BY timestamp DESC';
-
-        // Detect if using SQLite or another DB
-        if (typeof this.db.all === 'function') {
-            // SQLite
-            return this.db.all(query, params);
-        } else {
-            // Postgres or MySQL
-            // Replace SQLite-style placeholders with $1, $2, ... for Postgres
-            let pgQuery = query;
-            let pgParams = params;
-            if (this.db.query) {
-                // Postgres uses $1, $2, ...
-                let idx = 1;
-                pgQuery = query.replace(/\?/g, () => `$${idx++}`);
-                const result = await this.db.query(pgQuery, pgParams);
-                return result.rows;
-            } else {
-                // MySQL
-                const [rows] = await this.db.execute(pgQuery, pgParams);
-                return rows;
-            }
+        if (to) {
+            clauses.push('timestamp < ?');
+            params.push(to);
         }
+        return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
     }
 
-    async createMessage(data) {
-        if (!this.db) throw new Error('Database not initialized');
-        const { sender, phone, message, timestamp } = data;
-        const ts = timestamp || new Date().toISOString();
-
-        if (typeof this.db.run === 'function') {
-            // SQLite
-            return this.db.run(
-                'INSERT INTO messages (sender, phone, message, timestamp) VALUES (?, ?, ?, ?)',
-                [sender, phone, message, ts]
-            );
-        } else if (this.db.query) {
-            // Postgres
-            const query = 'INSERT INTO messages (sender, phone, message, timestamp) VALUES ($1, $2, $3, $4)';
-            return this.db.query(query, [sender, phone, message, ts]);
-        } else if (this.db.execute) {
-            // MySQL
-            const query = 'INSERT INTO messages (sender, phone, message, timestamp) VALUES (?, ?, ?, ?)';
-            return this.db.execute(query, [sender, phone, message, ts]);
-        } else {
-            throw new Error('Unknown database interface');
+    // Returns one page of messages (newest first) plus the total number of matches
+    async list({ limit, offset, ...filters }) {
+        if (!Number.isInteger(limit) || !Number.isInteger(offset)) {
+            throw new TypeError('limit and offset must be integers');
         }
+        const { where, params } = this.buildFilters(filters);
+        const [countRow] = await this.db.all(`SELECT COUNT(*) AS total FROM messages ${where}`, params);
+        // limit/offset are validated integers, so they are safe to inline (MySQL rejects them as bound params)
+        const rows = await this.db.all(
+            `SELECT ${COLUMNS} FROM messages ${where} ORDER BY timestamp DESC, id DESC LIMIT ${limit} OFFSET ${offset}`,
+            params
+        );
+        return { total: Number(countRow.total), messages: rows.map(toMessage) };
     }
 
-    async deleteMessage(id) {
-        if (!this.db) throw new Error('Database not initialized');
-        logToFile(`Deleting msg with ID: ${id}`);
+    async latest(filters) {
+        const { messages } = await this.list({ ...filters, limit: 1, offset: 0 });
+        return messages[0] || null;
+    }
 
-        if (typeof this.db.run === 'function') {
-            // SQLite
-            const query = 'DELETE FROM messages WHERE id = ?';
-            const result = await this.db.run(query, [id]);
-            return result.changes > 0; // Return true if a row was deleted
-        } else if (this.db.query) {
-            // Postgres
-            const query = 'DELETE FROM messages WHERE id = $1';
-            const result = await this.db.query(query, [id]);
-            return result.rowCount > 0; // Return true if a row was deleted
-        } else if (this.db.execute) {
-            // MySQL
-            const query = 'DELETE FROM messages WHERE id = ?';
-            const [result] = await this.db.execute(query, [id]);
-            return result.affectedRows > 0; // Return true if a row was deleted
-        } else {
-            throw new Error('Unknown database interface');
-        }
+    async create({ sender, phone, message, apiKeyName }) {
+        const timestamp = new Date();
+        const id = await this.db.insert(
+            'INSERT INTO messages (sender, phone, message, timestamp, api_key_name) VALUES (?, ?, ?, ?, ?)',
+            [sender, phone, message, timestamp, apiKeyName || null]
+        );
+        return { id: Number(id), timestamp: timestamp.toISOString() };
+    }
+
+    // Deletes the given ids; returns the number of rows removed
+    async deleteMany(ids) {
+        if (ids.length === 0) return 0;
+        const placeholders = ids.map(() => '?').join(', ');
+        return this.db.run(`DELETE FROM messages WHERE id IN (${placeholders})`, ids);
+    }
+
+    async deleteOlderThan(date) {
+        return this.db.run('DELETE FROM messages WHERE timestamp < ?', [date]);
+    }
+
+    async ping() {
+        await this.db.all('SELECT 1 AS ok');
     }
 }
 
-module.exports = new MessageModel();
+module.exports = MessageModel;

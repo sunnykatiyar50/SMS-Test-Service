@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const logDir = path.join(__dirname, '../../logs');
+const logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
 const logFile = path.join(logDir, 'app.log');
+const logToConsole = process.env.NODE_ENV !== 'test';
 
 // Ensure logs directory exists
 if (!fs.existsSync(logDir)) {
@@ -24,11 +25,16 @@ function rotateLogFileIfNeeded() {
     }
 }
 
-// Logging utility
+// Logging utility. Newlines are escaped so a value cannot forge extra log entries.
 function logToFile(message) {
-    rotateLogFileIfNeeded();
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
+    const line = `[${new Date().toISOString()}] ${String(message).replace(/[\r\n]+/g, '\\n')}`;
+    if (logToConsole) console.log(line);
+    try {
+        rotateLogFileIfNeeded();
+        fs.appendFileSync(logFile, `${line}\n`);
+    } catch (error) {
+        console.error('Failed to write log file:', error.message);
+    }
 }
 
 module.exports = { logToFile };

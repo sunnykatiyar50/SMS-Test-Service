@@ -1,0 +1,58 @@
+// Reads and validates configuration from environment variables.
+// Throws on invalid auth configuration so the server never starts unprotected by accident.
+
+function parseApiKeys(raw) {
+    if (!raw) return [];
+    return raw
+        .split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean)
+        .map((entry, idx) => {
+            const sep = entry.indexOf(':');
+            if (sep === -1) return { name: idx === 0 ? 'default' : `key${idx + 1}`, key: entry };
+            return { name: entry.slice(0, sep).trim(), key: entry.slice(sep + 1).trim() };
+        });
+}
+
+function toInt(value, fallback) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function loadConfig(env = process.env) {
+    const config = {
+        port: toInt(env.PORT, 3006),
+        authDisabled: env.AUTH_DISABLED === 'true',
+        ingestApiKeys: parseApiKeys(env.INGEST_API_KEYS),
+        adminToken: env.ADMIN_TOKEN || '',
+        adminPassword: env.ADMIN_PASSWORD || '',
+        sessionSecret: env.SESSION_SECRET || '',
+        sessionTtlHours: toInt(env.SESSION_TTL_HOURS, 12),
+        trustProxy: env.TRUST_PROXY || '',
+        ingestRateLimit: toInt(env.INGEST_RATE_LIMIT, 120),
+        retentionDays: toInt(env.RETENTION_DAYS, 0),
+    };
+
+    if (!config.authDisabled) {
+        const problems = [];
+        if (config.ingestApiKeys.length === 0) problems.push('INGEST_API_KEYS is not set');
+        if (config.ingestApiKeys.some(k => !k.name || k.key.length < 16)) {
+            problems.push('every INGEST_API_KEYS entry needs a name and a key of at least 16 characters');
+        }
+        if (!config.adminPassword) problems.push('ADMIN_PASSWORD is not set');
+        if (config.sessionSecret.length < 32) problems.push('SESSION_SECRET must be at least 32 characters');
+        if (config.adminToken && config.adminToken.length < 16) problems.push('ADMIN_TOKEN must be at least 16 characters');
+        const secrets = [config.adminPassword, config.sessionSecret, config.adminToken, ...config.ingestApiKeys.map(k => k.key)];
+        if (secrets.some(s => s.startsWith('change-me'))) problems.push('replace the change-me placeholder values from sample.env');
+        if (problems.length) {
+            throw new Error(
+                `Invalid auth configuration: ${problems.join('; ')}. ` +
+                'Set these in .env (see sample.env), or set AUTH_DISABLED=true for local development only.'
+            );
+        }
+    }
+
+    return config;
+}
+
+module.exports = { loadConfig, parseApiKeys };

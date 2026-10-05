@@ -10,8 +10,10 @@
     <div class="container">
         <!-- Top Bar with Buttons -->
         <div class="top-bar">
-            <button id="toggleFormButton" onclick="toggleForm()">Test API Form</button>
-            <button id="toggleApiSettingsButton" onclick="toggleApiSettings()">API Settings</button>
+            <button id="toggleFormButton">Test API Form</button>
+            <button id="toggleApiSettingsButton">API Settings</button>
+            <span class="spacer"></span>
+            <button id="logoutButton" class="secondary">Sign out</button>
         </div>
 
         <h1>SMS Test Service</h1>
@@ -22,7 +24,10 @@
                 <div id="apiSettings" class="api-settings-container">
                     <h2>API Settings</h2>
                     <p>Use the following API endpoint to send messages from a third-party app:</p>
-                    <pre><code id="apiEndpoint">POST http://localhost:3000/api/messages</code></pre>
+                    <pre><code id="apiEndpoint">POST http://localhost:3006/api/messages</code></pre>
+                    <p>Headers:</p>
+                    <pre><code>Content-Type: application/json
+X-API-Key: &lt;one of the keys in INGEST_API_KEYS&gt;</code></pre>
                     <p>Request Body (JSON):</p>
                     <pre><code>{
     "sender": "Your Name",
@@ -32,19 +37,19 @@
                 </div>
                 <!-- Send Message Form -->
                 <div id="sendMessageForm" class="form-container">
-                    <form id="messageForm" onsubmit="sendMessage(event)">
+                    <form id="messageForm">
                         <label for="senderInput">Sender:</label>
-                        <input type="text" id="senderInput" placeholder="Enter sender name" required />
-                        
+                        <input type="text" id="senderInput" placeholder="Enter sender name" maxlength="64" required />
+
                         <label for="phoneInput">Phone:</label>
-                        <input type="text" id="phoneInput" placeholder="Enter phone number" required />
-                        
+                        <input type="tel" id="phoneInput" placeholder="Enter phone number" required />
+
                         <label for="messageInput">Message:</label>
-                        <textarea id="messageInput" placeholder="Enter your message" required></textarea>
-                        
+                        <textarea id="messageInput" placeholder="Enter your message" maxlength="1600" required></textarea>
+
                         <div class="form-buttons">
                             <button type="submit">Send Message</button>
-                            <button type="button" onclick="clearForm()">Clear</button>
+                            <button type="button" id="clearFormButton">Clear</button>
                         </div>
                     </form>
                 </div>
@@ -55,16 +60,16 @@
                 <div class="filters">
                     <label for="startDate">Start Date:</label>
                     <input type="date" id="startDate" />
-                    
+
                     <label for="endDate">End Date:</label>
                     <input type="date" id="endDate" />
-                    
+
                     <input type="text" id="searchInput" placeholder="Search messages..." />
                     <button id="searchButton" type="button" class="primary">Search</button>
                 </div>
-                <div class="select-all-container" style="display: flex; align-items: center; justify-content: space-between;">
+                <div class="select-all-container">
                     <div>
-                        <input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" />
+                        <input type="checkbox" id="selectAllCheckbox" />
                         <label for="selectAllCheckbox">Select All</label>
                     </div>
                     <button id="deleteSelectedButton">Delete Selected</button>
@@ -74,16 +79,16 @@
                 </ul>
                 <div class="pagination-container">
                     <div id="pagination">
-                        <button id="prevPage" onclick="changePage(-1)" disabled>Previous</button>
+                        <button id="prevPage" disabled>Previous</button>
                         <span id="pageInfo"></span>
-                        <button id="nextPage" onclick="changePage(1)" disabled>Next</button>
+                        <button id="nextPage" disabled>Next</button>
                     </div>
                     <div class="message-info-container">
                         <span id="messageInfo"></span>
                     </div>
                     <div class="page-size-container">
                         <label for="pageSizeSelect">Messages per page:</label>
-                        <select id="pageSizeSelect" onchange="changePageSize()">
+                        <select id="pageSizeSelect">
                             <option value="10">10</option>
                             <option value="20">20</option>
                             <option value="50">50</option>
@@ -93,7 +98,7 @@
                 </div>
             </div>
 
-            <!-- New Section for Selected Message -->
+            <!-- Selected Message -->
             <div id="selectedMessageContainer" class="selected-message-container">
                 <h2 id="selectedMessageTitle">Selected Message</h2>
                 <hr class="selected-message-divider" />
@@ -106,16 +111,6 @@
             </div>
         </div>
     </div>
-    <div id="messageModal" class="modal hidden">
-        <div class="modal-content">
-            <span id="closeModal" class="close">&times;</span>
-            <h2>Message Details</h2>
-            <p id="modalMessageContent"></p>
-        </div>
-    </div>
-    <!-- <div class="message-info-container">
-        <span id="messageInfo"></span>
-    </div> -->
     <script src="scripts.js"></script>
 </body>
 </html>
