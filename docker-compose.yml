@@ -1,20 +1,30 @@
 # Default (SQLite):   docker compose up --build
 # With PostgreSQL:    DB_TYPE=postgres docker compose --profile postgres up --build
-# INGEST_API_KEYS, ADMIN_PASSWORD and SESSION_SECRET must be set in .env (see sample.env).
+#
+# All settings come from .env (see sample.env); INGEST_API_KEYS, ADMIN_PASSWORD and SESSION_SECRET are required.
+# PORT in .env picks the host port; inside the container the app always listens on 3006.
+# Requires Docker Compose 2.24 or later.
 services:
   sms-test-service:
     build: .
     image: sms-test-service:latest
+    init: true
     ports:
       - "${PORT:-3006}:3006"
+    env_file:
+      - path: .env
+        required: false
+    # Values here override .env. They pin container-internal paths and ports, and stop Compose
+    # from starting at all when a required secret is missing.
     environment:
+      PORT: 3006
+      SQLITE_PATH: /app/data/sms-db.sqlite
+      LOG_DIR: /app/logs
       INGEST_API_KEYS: ${INGEST_API_KEYS:?Set INGEST_API_KEYS in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
-      TRUST_PROXY: ${TRUST_PROXY:-}
-      RETENTION_DAYS: ${RETENTION_DAYS:-0}
       DB_TYPE: ${DB_TYPE:-sqlite}
+      # The bundled postgres service; shares its credentials with the service below
       PG_HOST: postgres
       PG_PORT: 5432
       PG_USER: ${PG_USER:-sms}

@@ -34,9 +34,36 @@ async function main() {
     scheduleRetention(messageModel, config.retentionDays);
 
     const app = createApp({ config, messageModel });
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
         logToFile(`Server is running on http://localhost:${config.port}`);
     });
+    handleShutdown(server, db);
+}
+
+// Stop accepting connections, let in-flight requests finish, then close the database.
+// Without this, `docker stop` waits its full timeout and then kills the process.
+function handleShutdown(server, db) {
+    let shuttingDown = false;
+    const shutdown = signal => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        logToFile(`${signal} received, shutting down`);
+        setTimeout(() => {
+            logToFile('Shutdown timed out, exiting');
+            process.exit(1);
+        }, 8000).unref();
+        server.close(async () => {
+            try {
+                await db.close();
+            } catch (error) {
+                logToFile(`Error closing database: ${error.message}`);
+            }
+            process.exit(0);
+        });
+        server.closeIdleConnections();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 main().catch(error => {

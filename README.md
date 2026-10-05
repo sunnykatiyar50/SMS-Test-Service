@@ -121,7 +121,7 @@ To turn off authentication completely for local development, set `AUTH_DISABLED=
 
 ## Running with Docker
 
-Requires Docker with the Compose plugin. Set `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` in `.env` first. Compose refuses to start without them.
+Requires Docker with the Compose plugin, version 2.24 or later. Set `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` in `.env` first. Compose refuses to start without them.
 
 With SQLite (default):
 ```
@@ -135,15 +135,25 @@ DB_TYPE=postgres docker compose --profile postgres up --build
 
 The service is available at `http://localhost:3006`. Set `PORT` to publish it on a different host port. Messages and logs are kept in the `sms-data` and `sms-logs` volumes (PostgreSQL data in `pg-data`), so they survive container restarts. To delete them, run `docker compose down -v`.
 
-Docker Compose reads the `.env` file in the project directory. Inside Compose, `PG_HOST` is always the bundled `postgres` service.
+Compose passes every setting in `.env` to the container. A few are fixed inside the container regardless of `.env`:
+- The app listens on port `3006`. `PORT` in `.env` only chooses the host port.
+- The database lives in `/app/data` and logs in `/app/logs`.
+- `PG_HOST` is the bundled `postgres` service.
+
+Without the `postgres` profile, you can use MySQL or an external PostgreSQL server by setting `DB_TYPE` and the `MYSQL_*` / `PG_*` values in `.env`. For a database running on your own machine, use `host.docker.internal` as the host, not `localhost`. To use an external PostgreSQL server, also remove the `PG_HOST: postgres` line from `docker-compose.yml`.
+
+Stopping the container (`docker compose down` or `docker stop`) shuts the app down cleanly: it finishes in-flight requests and closes the database.
 
 To build and run the image without Compose:
 ```
 docker build -t sms-test-service .
-docker run -d -p 3006:3006 -v sms-data:/app/data --env-file .env --name sms-test-service sms-test-service
+docker run -d -p 3006:3006 -v sms-data:/app/data --env-file .env -e PORT=3006 --init --name sms-test-service sms-test-service
 ```
+`-e PORT=3006` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:3006`.
 
-To use a database running on your machine from the container, set the host to `host.docker.internal` (for example `-e DB_TYPE=mysql -e MYSQL_HOST=host.docker.internal ...`), not `localhost`.
+Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
+
+The image builds `sqlite3` from source if no prebuilt binary is available for your platform. The build tools for that are only used during the build and are not in the final image.
 
 If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
 
