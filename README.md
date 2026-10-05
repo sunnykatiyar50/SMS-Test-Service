@@ -127,6 +127,34 @@ To turn off authentication completely for local development, set `AUTH_DISABLED=
 
 ## Running with Docker
 
+### Prebuilt image
+
+A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Node 22 and 24, then builds the image for `linux/amd64` and `linux/arm64` and publishes it to GitHub Container Registry:
+
+| Event | Tags |
+|-------|------|
+| Push to `main` | `latest`, `sha-<commit>` |
+| Push a tag such as `v2.1.0` | `2.1.0`, `2.1`, `2`, `sha-<commit>` |
+| Pull request | Builds the image to check it, but doesn't publish |
+
+```
+docker pull ghcr.io/sunnykatiyar50/sms-test-service:latest
+docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001 --init \
+  --name sms-test-service ghcr.io/sunnykatiyar50/sms-test-service:latest
+```
+
+To use it with Compose instead of building locally, change `image:` in `docker-compose.yml` to `ghcr.io/sunnykatiyar50/sms-test-service:latest` and run `docker compose pull && docker compose up -d`.
+
+New packages on GitHub Container Registry are private. To let anyone pull without logging in, open the package on GitHub (your profile → **Packages** → `sms-test-service` → **Package settings**) and change its visibility to **Public**. To pull a private image, first run `docker login ghcr.io` with a personal access token that has the `read:packages` scope.
+
+To publish a versioned release:
+```
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+### Building locally
+
 Requires Docker with the Compose plugin, version 2.24 or later. Set `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` in `.env` first. Compose refuses to start without them.
 
 With SQLite (default):
