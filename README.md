@@ -153,12 +153,7 @@ sudo mkdir -p ./data ./logs && sudo chown -R 1000:1000 ./data ./logs
 ```
 If a folder isn't writable, the container explains this at startup and prints the command to fix it. For the log folder it continues with stdout logging only. Alternatively, run the container once as root (`user: root` in Compose); it then fixes the ownership itself and still runs the app as UID 1000.
 
-**Bundled PostgreSQL.** Set `DB_TYPE=postgres`, `PG_HOST=postgres`, `PG_PORT=5432`, `PG_USER`, `PG_PASSWORD`, and `PG_DATABASE` in `.env`, then:
-```
-docker compose --profile postgres up -d
-```
-
-**External database.** Set `DB_TYPE` and the `PG_*` or `MYSQL_*` values in `.env` to point at it. Don't use `localhost`: inside a container that means the container itself. For a database on the Docker host, use `host.docker.internal`; the Compose file makes that name resolve on Linux too.
+**PostgreSQL or MySQL.** Use the bundled PostgreSQL container (`docker compose --profile postgres up -d`) or any external server. Both are configured with the same `PG_*` (or `MYSQL_*`) variables in `.env`; see [Database setup](#database-setup).
 
 **Listening on one interface only.** Put an address in front of the port in `docker-compose.yml`, for example `"100.110.180.13:30001:30001"` for a VPN or Tailscale address.
 
@@ -331,10 +326,52 @@ See `sample.env` for a commented template.
 | `LOG_TO_FILE` | `true` | `false` logs to stdout only (handy in containers, where `docker logs` already collects output) |
 | `DB_TYPE` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
 | `SQLITE_PATH` | `./sms-db.sqlite` | SQLite database file (the Docker image uses `/app/data/sms-db.sqlite`) |
-| `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` | — | PostgreSQL connection settings |
+| `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` | — | PostgreSQL connection, the same for the bundled container and external servers ([Database setup](#database-setup)) |
+| `PG_SSL` | `false` | `true` (verified TLS), `no-verify` (TLS, self-signed certificates), or `false` |
+| `PG_SSL_CA` | — | Path to an extra CA certificate (PEM) to trust |
 | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | — | MySQL connection settings |
+| `MYSQL_SSL`, `MYSQL_SSL_CA` | `false`, — | Same as `PG_SSL` and `PG_SSL_CA`, for MySQL |
 
 For every database type, the `messages` table is created automatically on startup if it doesn't exist, and older tables get the new `api_key_name` column added. For PostgreSQL and MySQL, the database itself must already exist.
+
+### Database setup
+
+**SQLite** (default) needs no settings.
+
+**PostgreSQL** always uses the same five variables, whether the database is the bundled container or a server somewhere else:
+
+```
+DB_TYPE=postgres
+PG_HOST=…          # see the table below
+PG_PORT=5432
+PG_USER=sms
+PG_PASSWORD=…
+PG_DATABASE=sms
+PG_SSL=false       # true for most hosted databases
+```
+
+Only `PG_HOST`, and for hosted databases `PG_SSL`, depend on where the database runs:
+
+| Where PostgreSQL runs | `PG_HOST` | Notes |
+|---|---|---|
+| Bundled container from `docker-compose.yml` | `postgres` | Start with `docker compose --profile postgres up -d`. The container is created with the same `PG_USER`, `PG_PASSWORD`, and `PG_DATABASE`. |
+| On the Docker host itself | `host.docker.internal` | The server must listen on an address the container can reach, not only `127.0.0.1`. |
+| Another server, VPN address, or another Compose stack | Its hostname or IP | For another stack, put both containers on a shared Docker network and use the database's service name. |
+| Hosted (Neon, Supabase, AWS RDS, Azure, …) | The host from the provider's connection string | Set `PG_SSL=true`. |
+| App running without Docker | `localhost` (or the server's address) | — |
+
+Inside Docker, never use `localhost`: it means the app's own container, so the connection fails with `ECONNREFUSED 127.0.0.1:5432`.
+
+`PG_SSL` controls TLS:
+- `false` (default): no TLS, for local servers and Docker networks.
+- `true`: TLS, with the server certificate verified against the system's trusted CAs.
+- `no-verify`: TLS without verifying the certificate, for servers with a self-signed certificate.
+
+If the server's certificate comes from a CA that isn't in the system store (for example the AWS RDS bundle), mount the PEM file into the container and set `PG_SSL_CA` to its path.
+
+If your provider gives a connection string such as `postgres://user:pass@host:5432/db?sslmode=require`, split it into these variables: `user` → `PG_USER`, `pass` → `PG_PASSWORD`, `host` → `PG_HOST`, `5432` → `PG_PORT`, `db` → `PG_DATABASE`, and `sslmode=require` → `PG_SSL=true`.
+
+**MySQL** works the same way with `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_SSL`, and `MYSQL_SSL_CA`, using the same rules for the host. There is no bundled MySQL container.
 
 ## Upgrading from 1.x
 
@@ -350,6 +387,8 @@ For every database type, the `messages` table is created automatically on startu
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
 - **`EACCES: permission denied` for `/app/logs/app.log` or `unable to open database file` in Docker:** the mounted folder isn't writable by UID 1000, which the container runs as. This usually happens when Docker created a bind-mount folder as root. Fix it once on the host with `sudo chown -R 1000:1000 <folder>`, or start the container once with `user: root` (Compose) / `--user root` to have it fixed automatically. The container's startup output names the folder and the command. If only the log folder is affected, the app keeps running and logs to stdout.
 - **`ECONNREFUSED 127.0.0.1:5432` (or `:3306`) in Docker:** `PG_HOST` / `MYSQL_HOST` is `localhost`, which inside a container means the container itself. Use the database container's service name (`postgres` with the bundled profile), or `host.docker.internal` for a database on the host machine.
+- **`no pg_hba.conf entry … no encryption`, `SSL/TLS required`, or `connection is insecure` from a hosted database:** the server requires TLS. Set `PG_SSL=true` (or `MYSQL_SSL=true`).
+- **`self-signed certificate in certificate chain` or `unable to verify the first certificate`:** TLS is on, but the server's certificate isn't trusted. Set `PG_SSL_CA` to the provider's CA file, or use `PG_SSL=no-verify` for a server with a self-signed certificate.
 - **`invalid ELF header` or `not a valid Win32 application` mentioning `node_sqlite3.node`:** a `node_modules` folder from an older version still contains the native `sqlite3` module, built for another OS (for example installed on Windows and started from WSL). Current versions don't use it. Delete `node_modules` and run `npm install` again.
 - **`SQLite is an experimental feature` warning on Node 22:** harmless. The npm scripts already hide it; it only appears if you start the app with plain `node src/app.js`.
 

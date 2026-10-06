@@ -7,11 +7,13 @@
 # Every setting comes from .env. In .env, keep SQLITE_PATH and LOG_DIR unset (or pointing inside
 # /app/data and /app/logs), otherwise the database or logs end up outside the mounted folders.
 #
-# With the bundled PostgreSQL instead of SQLite, set these in .env, then run
-# `docker compose --profile postgres up -d`:
-#   DB_TYPE=postgres  PG_HOST=postgres  PG_PORT=5432  PG_USER=sms  PG_PASSWORD=<secret>  PG_DATABASE=sms
-# For a database elsewhere, point PG_HOST (or MYSQL_HOST) at it. Not localhost: inside the container
-# that is the container itself. Use host.docker.internal for a database on the Docker host.
+# PostgreSQL instead of SQLite: set DB_TYPE=postgres and the PG_* variables in .env. They are the
+# same for the bundled container and for any external server; only PG_HOST differs:
+#   bundled container  -> PG_HOST=postgres, start with: docker compose --profile postgres up -d
+#   Docker host        -> PG_HOST=host.docker.internal
+#   other/hosted server -> PG_HOST=<its host>, and usually PG_SSL=true for hosted databases
+# Never PG_HOST=localhost: inside the container that is the container itself.
+# Full details: README.md, "Database setup".
 services:
   sms-test-service:
     image: ghcr.io/sunnykatiyar50/sms-test-service:latest

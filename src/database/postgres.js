@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { logToFile } = require('../utils/logger');
+const { sslOptions } = require('./ssl');
 
 // The model writes SQL with "?" placeholders; Postgres expects $1, $2, ...
 function toPgPlaceholders(sql) {
@@ -15,6 +16,7 @@ async function connect() {
         user: process.env.PG_USER,
         password: process.env.PG_PASSWORD,
         database: process.env.PG_DATABASE,
+        ssl: sslOptions(process.env.PG_SSL, process.env.PG_SSL_CA),
     });
 
     await pool.query(`
