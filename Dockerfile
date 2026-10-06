@@ -14,9 +14,13 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 
-# SQLite data and log files are written here; mount volumes to keep them
-RUN mkdir -p /app/data /app/logs && chown -R node:node /app/data /app/logs
-USER node
+# The entrypoint fixes ownership of mounted data/log directories, then runs the app as the "node" user.
+# Stripping \r keeps it working when the file was checked out on Windows with CRLF line endings.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod 755 /usr/local/bin/docker-entrypoint.sh \
+    && mkdir -p /app/data /app/logs \
+    && chown -R node:node /app/data /app/logs
 
 EXPOSE 30001
 
@@ -24,4 +28,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD node -e "fetch('http://localhost:' + process.env.PORT + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 # The app handles SIGTERM itself (graceful shutdown); exec form keeps node as the signal receiver
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "src/app.js"]

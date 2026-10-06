@@ -185,7 +185,7 @@ docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001
 ```
 `-e PORT=30001` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:30001`.
 
-Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
+Named volumes and bind mounts (for example `-v ./data:/app/data -v ./logs:/app/logs`) both work. The app runs as the unprivileged `node` user (UID 1000). On startup the entrypoint gives that user ownership of the data and log directories if they belong to someone else, such as root. If you start the container with `--user` (or `user:` in Compose), that step is skipped, and the directories must already be writable by that user.
 If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
 
 ## API Endpoints
@@ -315,6 +315,7 @@ See `sample.env` for a commented template.
 | `INGEST_RATE_LIMIT` | `120` | Max `POST /api/messages` requests per minute per client IP |
 | `RETENTION_DAYS` | `0` | Delete messages older than this many days, checked hourly (`0` keeps everything) |
 | `LOG_DIR` | `./logs` | Directory for log files |
+| `LOG_TO_FILE` | `true` | `false` logs to stdout only (handy in containers, where `docker logs` already collects output) |
 | `DB_TYPE` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
 | `SQLITE_PATH` | `./sms-db.sqlite` | SQLite database file (the Docker image uses `/app/data/sms-db.sqlite`) |
 | `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` | — | PostgreSQL connection settings |
@@ -334,6 +335,8 @@ For every database type, the `messages` table is created automatically on startu
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
 - **`401 Invalid API key`:** the `X-API-Key` value doesn't match any key in `INGEST_API_KEYS`. Restart the server after changing `.env`.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
+- **`EACCES: permission denied` for `/app/logs/app.log` or `unable to open database file` in Docker:** the mounted directory isn't writable by the app's user. The image fixes this automatically when the container starts as root (the default). If you run it with `--user`, make the directories writable by that user. If the log directory can't be written, the app logs to stdout only and says so once at startup.
+- **`ECONNREFUSED 127.0.0.1:5432` (or `:3306`) in Docker:** `PG_HOST` / `MYSQL_HOST` is `localhost`, which inside a container means the container itself. Use the database container's service name (`postgres` with the bundled profile), or `host.docker.internal` for a database on the host machine.
 - **`invalid ELF header` or `not a valid Win32 application` mentioning `node_sqlite3.node`:** a `node_modules` folder from an older version still contains the native `sqlite3` module, built for another OS (for example installed on Windows and started from WSL). Current versions don't use it. Delete `node_modules` and run `npm install` again.
 - **`SQLite is an experimental feature` warning on Node 22:** harmless. The npm scripts already hide it; it only appears if you start the app with plain `node src/app.js`.
 
