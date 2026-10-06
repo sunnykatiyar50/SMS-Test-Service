@@ -11,10 +11,17 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with sidebar navigation:
   - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
+  - Messages are shown according to their format, with a switch between views:
+    - **JSON**: indented and colour-coded, or raw.
+    - **HTML**: a safe preview (scripts and external images blocked), indented source, or raw.
+    - **XML**: indented, or raw.
+    - **Syslog**: a table with time, host, app, PID and a severity badge (RFC 3164, RFC 5424 and classic `host app[pid]:` lines), or raw.
+    - **Plain text**: shown as sent, with clickable links.
   - Quick time range in the sidebar: Last 10 minutes, Last 1 hour, Last 8 hours, Last 1 day, Last 1 week, Last 1 month, or All time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
 - Sign-in page with username and password from `.env`
+- Light and dark themes: the theme button (sidebar, or the corner of the sign-in page) cycles between System (follows the browser), Light, and Dark, and the choice is remembered
 - Phone numbers are masked in API responses and the dashboard (only the last 4 digits are shown)
 - Input validation, rate limiting, security headers (CSP), and optional automatic cleanup of old messages
 - Application logs written to `logs/app.log` and stdout, rotated daily. Message text is never logged.
@@ -46,11 +53,13 @@ sms-test-service
 │   │   └── session.js            # Signed session cookies
 │   └── views                     # Web interface (served as static files)
 │       ├── favicon.svg
+│       ├── formatters.js            # Detects and renders JSON / HTML / XML / syslog / text messages
 │       ├── index.html                # Dashboard: Messages, Send test, API reference
 │       ├── login.html
 │       ├── login.js
 │       ├── scripts.js
-│       └── styles.css
+│       ├── styles.css
+│       └── theme.js                 # System / light / dark theme, applied before first paint
 ├── test
 │   └── api.test.js
 ├── logs/                         # Created automatically (app.log, app-YYYY-MM-DD.log)

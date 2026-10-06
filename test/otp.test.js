@@ -45,6 +45,8 @@ const cases = [
     // Long, multi-part message with the code near the end
     [`${'This is a long promotional preamble. '.repeat(40)}Finally, your verification code is 246810.`, '246810'],
     // No code
+    ['<34>Oct  6 12:00:01 web01 sshd[1234]: Failed password for root from 10.0.0.5 port 22', null],
+    ['Login failed: password expired for uid 5012 on port 2222', null],
     ['Your order #2025 has shipped and will arrive Monday.', null],
     ['Meeting moved to 10:30 on 05/10/2026', null],
     ['Your balance is Rs 15000', null],
