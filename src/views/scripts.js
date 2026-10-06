@@ -45,6 +45,14 @@ function el(tag, className, text) {
     return node;
 }
 
+// Visible text of an HTML message for the list preview. DOMParser documents are inert:
+// scripts don't run and images aren't fetched.
+function htmlToText(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script, style, head').forEach(node => node.remove());
+    return doc.body ? doc.body.textContent : '';
+}
+
 function truncateMessage(message, maxLength = 120) {
     if (!message) return '';
     const singleLine = message.replace(/[\r\n]+/g, ' ').trim();
@@ -254,7 +262,15 @@ function renderMessages() {
 
         const body = el('div', 'row-body');
         body.appendChild(top);
-        body.appendChild(el('div', 'row-text', truncateMessage(msg.message)));
+        const format = MessageFormat.detectFormat(msg.message || '');
+        const textLine = el('div', 'row-text');
+        if (format !== 'text') {
+            const tag = el('span', 'row-format format-badge', MessageFormat.LABELS[format]);
+            tag.dataset.format = format;
+            textLine.appendChild(tag);
+        }
+        textLine.appendChild(document.createTextNode(truncateMessage(MessageFormat.previewText(msg.message || '', format, htmlToText))));
+        body.appendChild(textLine);
 
         li.appendChild(checkWrap);
         li.appendChild(body);
@@ -280,13 +296,38 @@ function showDetails(message) {
     $('selectedMessageTimestamp').textContent = message.timestamp ? new Date(message.timestamp).toLocaleString() : '';
     $('selectedMessagePhone').textContent = message.phone || '';
     $('selectedMessageLength').textContent = `${(message.message || '').length} characters`;
-    $('selectedMessageText').textContent = message.message || '';
 
     // The server detects the code (see src/utils/otp.js) and returns it as `code`
     const code = message.code;
     $('copyCodeButton').classList.toggle('hidden', !code);
     $('copyCodeButton').textContent = code ? `Copy code ${code}` : 'Copy code';
     $('copyCodeButton').dataset.code = code || '';
+
+    renderMessageBody(message);
+}
+
+// Renders the message as JSON / HTML / XML / syslog / text (see formatters.js) with a view switcher.
+// The chosen view is remembered per format.
+function renderMessageBody(message, view) {
+    const text = message.message || '';
+    const format = MessageFormat.detectFormat(text);
+    const chosen = view || readSetting(`sms_view_${format}`, '');
+    const result = MessageFormat.renderMessage($('selectedMessageText'), text, { code: message.code, view: chosen });
+
+    $('formatBadge').textContent = MessageFormat.LABELS[result.format];
+    $('formatBadge').dataset.format = result.format;
+    const switcher = $('viewSwitch');
+    switcher.replaceChildren();
+    for (const name of result.views) {
+        const button = el('button', name === result.view ? 'active' : '', MessageFormat.LABELS[name]);
+        button.type = 'button';
+        button.setAttribute('aria-pressed', String(name === result.view));
+        button.addEventListener('click', () => {
+            saveSetting(`sms_view_${result.format}`, name);
+            renderMessageBody(message, name);
+        });
+        switcher.appendChild(button);
+    }
 }
 
 // Up/down arrow keys move through the list
@@ -655,7 +696,11 @@ window.addEventListener('DOMContentLoaded', () => {
     $('pageSizeSelect').addEventListener('change', changePageSize);
     $('selectAllCheckbox').addEventListener('change', event => toggleSelectAll(event.target.checked));
     $('deleteSelectedButton').addEventListener('click', deleteSelectedMessages);
-    $('copyMessageButton').addEventListener('click', event => copyText($('selectedMessageText').textContent, event.target));
+    // Always copies the original text, whatever view is showing
+    $('copyMessageButton').addEventListener('click', event => {
+        const message = messages.find(m => m.id === selectedId);
+        if (message) copyText(message.message || '', event.target);
+    });
     $('copyCodeButton').addEventListener('click', event => copyText(event.target.dataset.code, event.target));
     document.addEventListener('keydown', event => {
         if (currentView() !== 'messages' || event.target.matches('input, textarea, select')) return;

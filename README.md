@@ -11,6 +11,12 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with sidebar navigation:
   - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
+  - Messages are shown according to their format, with a switch between views:
+    - **JSON**: indented and colour-coded, or raw.
+    - **HTML**: a safe preview (scripts and external images blocked), indented source, or raw.
+    - **XML**: indented, or raw.
+    - **Syslog**: a table with time, host, app, PID and a severity badge (RFC 3164, RFC 5424 and classic `host app[pid]:` lines), or raw.
+    - **Plain text**: clickable links, with the detected OTP highlighted.
   - Quick time range in the sidebar: Last 10 minutes, Last 1 hour, Last 8 hours, Last 1 day, Last 1 week, Last 1 month, or All time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
@@ -46,6 +52,7 @@ sms-test-service
 │   │   └── session.js            # Signed session cookies
 │   └── views                     # Web interface (served as static files)
 │       ├── favicon.svg
+│       ├── formatters.js            # Detects and renders JSON / HTML / XML / syslog / text messages
 │       ├── index.html                # Dashboard: Messages, Send test, API reference
 │       ├── login.html
 │       ├── login.js

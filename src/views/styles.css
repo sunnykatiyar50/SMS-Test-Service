@@ -740,6 +740,195 @@ body.resizing {
     overflow-wrap: anywhere;
 }
 
+/* Small format tag at the start of a list row's preview text */
+.row-format {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 5px;
+    font-size: 10px;
+    line-height: 16px;
+    vertical-align: 1px;
+}
+
+/* --- Formatted message body (formatters.js) --- */
+.body-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: -4px;
+}
+
+.format-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    color: var(--muted);
+}
+
+.format-badge[data-format="json"] { color: #b45309; border-color: #fcd9a8; background: #fff8ee; }
+.format-badge[data-format="html"] { color: #be185d; border-color: #f9c4dc; background: #fff2f8; }
+.format-badge[data-format="xml"] { color: #7c3aed; border-color: #ddd0fb; background: #f7f3ff; }
+.format-badge[data-format="syslog"] { color: #0f766e; border-color: #b4e6df; background: #effcf9; }
+
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.segmented:empty {
+    display: none;
+}
+
+.segmented button {
+    padding: 3px 10px;
+    font-size: 12px;
+    border: none;
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--muted);
+}
+
+.segmented button + button {
+    border-left: 1px solid var(--border-strong);
+}
+
+.segmented button:hover:not(.active) {
+    background: var(--surface-alt);
+    color: var(--text);
+}
+
+.segmented button.active {
+    background: var(--blue);
+    color: #fff;
+}
+
+/* The pane itself provides padding for text; formatted views manage their own */
+.message-body[data-format="json"]:not([data-view="raw"]),
+.message-body[data-format="xml"]:not([data-view="raw"]),
+.message-body[data-format="html"]:not([data-view="raw"]),
+.message-body[data-format="syslog"]:not([data-view="raw"]) {
+    padding: 0;
+    white-space: normal;
+    overflow: hidden;
+}
+
+.message-body[data-format="syslog"]:not([data-view="raw"]) {
+    overflow-x: auto;
+}
+
+.formatted-code {
+    margin: 0;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 70vh;
+    overflow: auto;
+}
+
+.tok-key { color: #1d4ed8; }
+.tok-string { color: #15803d; }
+.tok-number { color: #b45309; }
+.tok-boolean { color: #7c3aed; font-weight: 600; }
+.tok-null { color: #6b7280; font-style: italic; }
+.tok-tag { color: #be185d; }
+.tok-pid { color: var(--muted); }
+
+.html-preview {
+    display: block;
+    width: 100%;
+    height: 240px;
+    border: none;
+    background: #fff;
+}
+
+.message-text-body a {
+    color: var(--blue);
+    overflow-wrap: anywhere;
+}
+
+.otp-mark {
+    padding: 0 3px;
+    border-radius: 3px;
+    background: #fde68a;
+    color: inherit;
+    font-weight: 700;
+}
+
+.syslog-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.syslog-table th {
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+    text-align: left;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--sans);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.syslog-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.syslog-table tr:last-child td {
+    border-bottom: none;
+}
+
+.syslog-table td.syslog-message {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    width: 100%;
+}
+
+.syslog-extra {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.sev-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.tok-sev-emerg, .tok-sev-alert, .tok-sev-crit { background: #7f1d1d; color: #fff; }
+.tok-sev-err { background: #fee2e2; color: #b91c1c; }
+.tok-sev-warning { background: #fef3c7; color: #92400e; }
+.tok-sev-notice { background: #dbeafe; color: #1e40af; }
+.tok-sev-info { background: #dcfce7; color: #166534; }
+.tok-sev-debug { background: #f3f4f6; color: #6b7280; }
+
 /* ===== Send view ===== */
 .send-layout {
     display: grid;

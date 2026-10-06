@@ -15,7 +15,7 @@ const KEYWORD_RE = new RegExp(KEYWORDS.join('|'), 'giu');
 // Text right before a number that marks it as money, e.g. "Rs. 5,000", "$1200", "INR 4500"
 const CURRENCY_BEFORE = /(?:rs\.?|inr|usd|eur|gbp|aed|sgd|\$|€|£|₹|¥)\s*$/i;
 // Text right before a number that marks it as an identifier, e.g. "order #7788", "txn 5566", "Ref no 9988"
-const IDENTIFIER_BEFORE = /(?:#|\b(?:order|txn|transaction|trans|ref(?:erence)?|invoice|inv|ticket|booking|pnr|a\/c|acct|account(?:\s+ending)?|card(?:\s+ending)?|id|no\.?|number)\s*(?:no\.?|number|id)?\s*[:#.]?\s*#?)\s*$/i;
+const IDENTIFIER_BEFORE = /(?:#|\b(?:order|txn|transaction|trans|ref(?:erence)?|invoice|inv|ticket|booking|pnr|a\/c|acct|account(?:\s+ending)?|card(?:\s+ending)?|id|no\.?|number|port|pid|uid|gid|line|version|ver|v)\s*(?:no\.?|number|id)?\s*[:#.]?\s*#?)\s*$/i;
 // Text right after a number that marks it as something other than a code
 const UNIT_AFTER = /^\s*(?:%|rs\b|inr\b|usd\b|eur\b|mins?\b|minutes?\b|hrs?\b|hours?\b|seconds?\b|secs?\b|days?\b|kg\b|km\b|gb\b|mb\b)/i;
 
@@ -52,6 +52,8 @@ function isExcluded(text, { start, end, kind, value }) {
     const before = text.slice(Math.max(0, start - 24), start);
     const after = text.slice(end, end + 10);
     if (CURRENCY_BEFORE.test(before) || IDENTIFIER_BEFORE.test(before) || UNIT_AFTER.test(after)) return true;
+    // Process IDs and similar bracketed numbers, e.g. "sshd[1234]:"
+    if (/\[$/.test(before) && /^\]/.test(after)) return true;
     // A 4-digit year with no other reason to be a code
     if (kind === 'digits' && value.length === 4 && /^(19|20)\d\d$/.test(value)) return 'year';
     return false;
