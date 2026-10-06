@@ -129,16 +129,13 @@ describe('previewText', () => {
 });
 
 describe('tokenizeText', () => {
-    test('links and the OTP code', () => {
-        const tokens = F.tokenizeText('Code 482913. Open https://example.com/verify?x=1.', '482913');
-        assert.deepEqual(tokens.filter(t => t.type !== 'text'), [
-            { text: '482913', type: 'code' },
-            { text: 'https://example.com/verify?x=1', type: 'link' },
-        ]);
+    test('finds links and leaves everything else, including codes, as plain text', () => {
+        const tokens = F.tokenizeText('Code 482913. Open https://example.com/verify?x=1.');
+        assert.deepEqual(tokens.filter(t => t.type !== 'text'), [{ text: 'https://example.com/verify?x=1', type: 'link' }]);
         assert.equal(tokens.map(t => t.text).join(''), 'Code 482913. Open https://example.com/verify?x=1.');
     });
 
     test('ignores non-http schemes', () => {
-        assert.equal(F.tokenizeText('javascript:alert(1)', null).every(t => t.type === 'text'), true);
+        assert.equal(F.tokenizeText('javascript:alert(1)').every(t => t.type === 'text'), true);
     });
 });

@@ -178,17 +178,15 @@
 
     // ---------- Plain text ----------
 
-    // Splits text into plain, link (http/https URLs) and code (the detected OTP) tokens
-    function tokenizeText(text, code) {
+    // Splits text into plain and link (http/https URL) tokens
+    function tokenizeText(text) {
         const tokens = [];
-        const pattern = code
-            ? new RegExp(`(https?://[^\\s<>"']+[^\\s<>"'.,;:!?)\\]])|(${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'g')
-            : /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/g;
+        const pattern = /https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g;
         let last = 0;
         let m;
         while ((m = pattern.exec(text))) {
             if (m.index > last) tokens.push({ text: text.slice(last, m.index), type: 'text' });
-            tokens.push({ text: m[0], type: m[1] ? 'link' : 'code' });
+            tokens.push({ text: m[0], type: 'link' });
             last = pattern.lastIndex;
         }
         if (last < text.length) tokens.push({ text: text.slice(last), type: 'text' });
@@ -241,10 +239,10 @@
         return pre;
     }
 
-    function renderText(text, code) {
+    function renderText(text) {
         const div = document.createElement('div');
         div.className = 'message-text-body';
-        for (const t of tokenizeText(text, code)) {
+        for (const t of tokenizeText(text)) {
             if (t.type === 'link') {
                 const a = document.createElement('a');
                 a.href = t.text;
@@ -252,11 +250,6 @@
                 a.target = '_blank';
                 a.rel = 'noopener noreferrer nofollow';
                 div.appendChild(a);
-            } else if (t.type === 'code') {
-                const mark = document.createElement('mark');
-                mark.className = 'otp-mark';
-                mark.textContent = t.text;
-                div.appendChild(mark);
             } else {
                 div.appendChild(document.createTextNode(t.text));
             }
@@ -326,7 +319,7 @@
 
     // Renders `text` into `container` and returns { format, views, view } so the caller can
     // show a badge and a view switcher. `view` selects one of `views`; default is the first.
-    function renderMessage(container, text, { code = null, view } = {}) {
+    function renderMessage(container, text, { view } = {}) {
         const format = detectFormat(text);
         const views = VIEWS[format];
         const active = views.includes(view) ? view : views[0] || 'formatted';
@@ -336,7 +329,7 @@
 
         try {
             if (active === 'raw') {
-                container.appendChild(renderText(text, null));
+                container.appendChild(renderText(text));
             } else if (format === 'json') {
                 container.appendChild(codeBlock(tokenizeJson(text.trim())));
             } else if (format === 'html' && active === 'preview') {
@@ -346,11 +339,11 @@
             } else if (format === 'syslog') {
                 container.appendChild(renderSyslog(parseSyslog(text.trim())));
             } else {
-                container.appendChild(renderText(text, code));
+                container.appendChild(renderText(text));
             }
         } catch {
             // Anything unexpected: fall back to the plain text
-            container.replaceChildren(renderText(text, code));
+            container.replaceChildren(renderText(text));
         }
         return { format, views, view: active, label: (v => LABELS[v] || v) };
     }

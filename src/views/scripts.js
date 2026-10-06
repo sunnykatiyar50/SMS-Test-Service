@@ -312,7 +312,7 @@ function renderMessageBody(message, view) {
     const text = message.message || '';
     const format = MessageFormat.detectFormat(text);
     const chosen = view || readSetting(`sms_view_${format}`, '');
-    const result = MessageFormat.renderMessage($('selectedMessageText'), text, { code: message.code, view: chosen });
+    const result = MessageFormat.renderMessage($('selectedMessageText'), text, { view: chosen });
 
     $('formatBadge').textContent = MessageFormat.LABELS[result.format];
     $('formatBadge').dataset.format = result.format;
