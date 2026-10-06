@@ -127,9 +127,53 @@ To turn off authentication completely for local development, set `AUTH_DISABLED=
 
 ## Running with Docker
 
-### Prebuilt image
+The image is published to GitHub Container Registry as `ghcr.io/sunnykatiyar50/sms-test-service`. It runs as the unprivileged `node` user (UID 1000), for `linux/amd64` and `linux/arm64`.
 
-A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Node 22 and 24, then builds the image for `linux/amd64` and `linux/arm64` and publishes it to GitHub Container Registry:
+### With Docker Compose
+
+Requires Docker with the Compose plugin.
+
+1. Copy `sample.env` to `.env` and fill in at least `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET`. Compose reads **all** settings from this file.
+2. Start it:
+   ```
+   docker compose up -d
+   ```
+3. To update to the latest image later:
+   ```
+   docker compose pull && docker compose up -d
+   ```
+
+The service is available at `http://localhost:30001` (or the `PORT` in `.env`; the same port is used on the host and in the container). Messages and logs are kept in the `sms-data` and `sms-logs` volumes. To delete them, run `docker compose down -v`.
+
+Keep `SQLITE_PATH` and `LOG_DIR` unset in `.env` when using Docker. The image already points them at `/app/data` and `/app/logs`, which are the mounted folders.
+
+**Bind mounts instead of volumes.** To keep the files in host folders, replace the `volumes:` entries with bind mounts such as `./data:/app/data` and `./logs:/app/logs`. The folders must be writable by UID 1000. Create them yourself before the first start, so Docker doesn't create them as root:
+```
+sudo mkdir -p ./data ./logs && sudo chown -R 1000:1000 ./data ./logs
+```
+If a folder isn't writable, the container explains this at startup and prints the command to fix it. For the log folder it continues with stdout logging only. Alternatively, run the container once as root (`user: root` in Compose); it then fixes the ownership itself and still runs the app as UID 1000.
+
+**PostgreSQL or MySQL.** Use the bundled PostgreSQL container (`docker compose --profile postgres up -d`) or any external server. Both are configured with the same `PG_*` (or `MYSQL_*`) variables in `.env`; see [Database setup](#database-setup).
+
+**Listening on one interface only.** Put an address in front of the port in `docker-compose.yml`, for example `"100.110.180.13:30001:30001"` for a VPN or Tailscale address.
+
+### With `docker run`
+
+```
+docker run -d --name sms-test-service --init --restart unless-stopped \
+  --env-file .env -p 30001:30001 \
+  -v sms-data:/app/data -v sms-logs:/app/logs \
+  ghcr.io/sunnykatiyar50/sms-test-service:latest
+```
+The container port must match `PORT` in `.env` (30001 by default).
+
+Stopping the container (`docker compose down` or `docker stop`) shuts the app down cleanly: it finishes in-flight requests and closes the database.
+
+If you put the service behind a reverse proxy (nginx, Traefik, Nginx Proxy Manager, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
+
+### Publishing the image
+
+A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Node 22 and 24, then builds and publishes the image:
 
 | Event | Tags |
 |-------|------|
@@ -137,56 +181,20 @@ A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Nod
 | Push a tag such as `v2.1.0` | `2.1.0`, `2.1`, `2`, `sha-<commit>` |
 | Pull request | Builds the image to check it, but doesn't publish |
 
-```
-docker pull ghcr.io/sunnykatiyar50/sms-test-service:latest
-docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001 --init \
-  --name sms-test-service ghcr.io/sunnykatiyar50/sms-test-service:latest
-```
-
-To use it with Compose instead of building locally, change `image:` in `docker-compose.yml` to `ghcr.io/sunnykatiyar50/sms-test-service:latest` and run `docker compose pull && docker compose up -d`.
-
-New packages on GitHub Container Registry are private. To let anyone pull without logging in, open the package on GitHub (your profile → **Packages** → `sms-test-service` → **Package settings**) and change its visibility to **Public**. To pull a private image, first run `docker login ghcr.io` with a personal access token that has the `read:packages` scope.
-
 To publish a versioned release:
 ```
 git tag v2.0.0
 git push origin v2.0.0
 ```
 
-### Building locally
+New packages on GitHub Container Registry are private. To let anyone pull without logging in, open the package on GitHub (your profile → **Packages** → `sms-test-service` → **Package settings**) and change its visibility to **Public**. To pull a private image, first run `docker login ghcr.io` with a personal access token that has the `read:packages` scope.
 
-Requires Docker with the Compose plugin, version 2.24 or later. Set `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET` in `.env` first. Compose refuses to start without them.
+### Building the image yourself
 
-With SQLite (default):
-```
-docker compose up --build
-```
-
-With a bundled PostgreSQL container:
-```
-DB_TYPE=postgres docker compose --profile postgres up --build
-```
-
-The service is available at `http://localhost:30001`. Set `PORT` to publish it on a different host port. Messages and logs are kept in the `sms-data` and `sms-logs` volumes (PostgreSQL data in `pg-data`), so they survive container restarts. To delete them, run `docker compose down -v`.
-
-Compose passes every setting in `.env` to the container. A few are fixed inside the container regardless of `.env`:
-- The app listens on port `30001`. `PORT` in `.env` only chooses the host port.
-- The database lives in `/app/data` and logs in `/app/logs`.
-- `PG_HOST` is the bundled `postgres` service.
-
-Without the `postgres` profile, you can use MySQL or an external PostgreSQL server by setting `DB_TYPE` and the `MYSQL_*` / `PG_*` values in `.env`. For a database running on your own machine, use `host.docker.internal` as the host, not `localhost`. To use an external PostgreSQL server, also remove the `PG_HOST: postgres` line from `docker-compose.yml`.
-
-Stopping the container (`docker compose down` or `docker stop`) shuts the app down cleanly: it finishes in-flight requests and closes the database.
-
-To build and run the image without Compose:
 ```
 docker build -t sms-test-service .
-docker run -d -p 30001:30001 -v sms-data:/app/data --env-file .env -e PORT=30001 --init --name sms-test-service sms-test-service
 ```
-`-e PORT=30001` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. To publish on a different host port, change only the first number in `-p`, for example `-p 8080:30001`.
-
-Use named volumes (as above), not bind mounts, for `/app/data`. The app runs as the unprivileged `node` user (UID 1000), so on Linux a bind-mounted host directory must be writable by that user: `sudo chown 1000:1000 ./data`.
-If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so rate limiting sees real client IPs and session cookies are marked `Secure` over HTTPS.
+To run your own build with Compose, change `image:` in `docker-compose.yml` to `sms-test-service`.
 
 ## API Endpoints
 
@@ -315,12 +323,55 @@ See `sample.env` for a commented template.
 | `INGEST_RATE_LIMIT` | `120` | Max `POST /api/messages` requests per minute per client IP |
 | `RETENTION_DAYS` | `0` | Delete messages older than this many days, checked hourly (`0` keeps everything) |
 | `LOG_DIR` | `./logs` | Directory for log files |
+| `LOG_TO_FILE` | `true` | `false` logs to stdout only (handy in containers, where `docker logs` already collects output) |
 | `DB_TYPE` | `sqlite` | `sqlite`, `postgres`, or `mysql` |
 | `SQLITE_PATH` | `./sms-db.sqlite` | SQLite database file (the Docker image uses `/app/data/sms-db.sqlite`) |
-| `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` | — | PostgreSQL connection settings |
+| `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD`, `PG_DATABASE` | — | PostgreSQL connection, the same for the bundled container and external servers ([Database setup](#database-setup)) |
+| `PG_SSL` | `false` | `true` (verified TLS), `no-verify` (TLS, self-signed certificates), or `false` |
+| `PG_SSL_CA` | — | Path to an extra CA certificate (PEM) to trust |
 | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | — | MySQL connection settings |
+| `MYSQL_SSL`, `MYSQL_SSL_CA` | `false`, — | Same as `PG_SSL` and `PG_SSL_CA`, for MySQL |
 
 For every database type, the `messages` table is created automatically on startup if it doesn't exist, and older tables get the new `api_key_name` column added. For PostgreSQL and MySQL, the database itself must already exist.
+
+### Database setup
+
+**SQLite** (default) needs no settings.
+
+**PostgreSQL** always uses the same five variables, whether the database is the bundled container or a server somewhere else:
+
+```
+DB_TYPE=postgres
+PG_HOST=…          # see the table below
+PG_PORT=5432
+PG_USER=sms
+PG_PASSWORD=…
+PG_DATABASE=sms
+PG_SSL=false       # true for most hosted databases
+```
+
+Only `PG_HOST`, and for hosted databases `PG_SSL`, depend on where the database runs:
+
+| Where PostgreSQL runs | `PG_HOST` | Notes |
+|---|---|---|
+| Bundled container from `docker-compose.yml` | `postgres` | Start with `docker compose --profile postgres up -d`. The container is created with the same `PG_USER`, `PG_PASSWORD`, and `PG_DATABASE`. |
+| On the Docker host itself | `host.docker.internal` | The server must listen on an address the container can reach, not only `127.0.0.1`. |
+| Another server, VPN address, or another Compose stack | Its hostname or IP | For another stack, put both containers on a shared Docker network and use the database's service name. |
+| Hosted (Neon, Supabase, AWS RDS, Azure, …) | The host from the provider's connection string | Set `PG_SSL=true`. |
+| App running without Docker | `localhost` (or the server's address) | — |
+
+Inside Docker, never use `localhost`: it means the app's own container, so the connection fails with `ECONNREFUSED 127.0.0.1:5432`.
+
+`PG_SSL` controls TLS:
+- `false` (default): no TLS, for local servers and Docker networks.
+- `true`: TLS, with the server certificate verified against the system's trusted CAs.
+- `no-verify`: TLS without verifying the certificate, for servers with a self-signed certificate.
+
+If the server's certificate comes from a CA that isn't in the system store (for example the AWS RDS bundle), mount the PEM file into the container and set `PG_SSL_CA` to its path.
+
+If your provider gives a connection string such as `postgres://user:pass@host:5432/db?sslmode=require`, split it into these variables: `user` → `PG_USER`, `pass` → `PG_PASSWORD`, `host` → `PG_HOST`, `5432` → `PG_PORT`, `db` → `PG_DATABASE`, and `sslmode=require` → `PG_SSL=true`.
+
+**MySQL** works the same way with `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, `MYSQL_SSL`, and `MYSQL_SSL_CA`, using the same rules for the host. There is no bundled MySQL container.
 
 ## Upgrading from 1.x
 
@@ -334,6 +385,10 @@ For every database type, the `messages` table is created automatically on startu
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
 - **`401 Invalid API key`:** the `X-API-Key` value doesn't match any key in `INGEST_API_KEYS`. Restart the server after changing `.env`.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
+- **`EACCES: permission denied` for `/app/logs/app.log` or `unable to open database file` in Docker:** the mounted folder isn't writable by UID 1000, which the container runs as. This usually happens when Docker created a bind-mount folder as root. Fix it once on the host with `sudo chown -R 1000:1000 <folder>`, or start the container once with `user: root` (Compose) / `--user root` to have it fixed automatically. The container's startup output names the folder and the command. If only the log folder is affected, the app keeps running and logs to stdout.
+- **`ECONNREFUSED 127.0.0.1:5432` (or `:3306`) in Docker:** `PG_HOST` / `MYSQL_HOST` is `localhost`, which inside a container means the container itself. Use the database container's service name (`postgres` with the bundled profile), or `host.docker.internal` for a database on the host machine.
+- **`no pg_hba.conf entry … no encryption`, `SSL/TLS required`, or `connection is insecure` from a hosted database:** the server requires TLS. Set `PG_SSL=true` (or `MYSQL_SSL=true`).
+- **`self-signed certificate in certificate chain` or `unable to verify the first certificate`:** TLS is on, but the server's certificate isn't trusted. Set `PG_SSL_CA` to the provider's CA file, or use `PG_SSL=no-verify` for a server with a self-signed certificate.
 - **`invalid ELF header` or `not a valid Win32 application` mentioning `node_sqlite3.node`:** a `node_modules` folder from an older version still contains the native `sqlite3` module, built for another OS (for example installed on Windows and started from WSL). Current versions don't use it. Delete `node_modules` and run `npm install` again.
 - **`SQLite is an experimental feature` warning on Node 22:** harmless. The npm scripts already hide it; it only appears if you start the app with plain `node src/app.js`.
 

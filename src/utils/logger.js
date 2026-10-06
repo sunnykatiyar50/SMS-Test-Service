@@ -5,9 +5,24 @@ const logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
 const logFile = path.join(logDir, 'app.log');
 const logToConsole = process.env.NODE_ENV !== 'test';
 
-// Ensure logs directory exists
-if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
+// File logging switches itself off (with one warning) if the directory or file can't be written,
+// e.g. a read-only or root-owned mount; everything still goes to stdout.
+let fileLogging = process.env.LOG_TO_FILE !== 'false';
+
+function disableFileLogging(error) {
+    fileLogging = false;
+    console.error(
+        `Logging to stdout only: cannot write ${logFile} (${error.code || error.message}). ` +
+        'Check that the log directory is writable, or set LOG_TO_FILE=false to silence this.'
+    );
+}
+
+if (fileLogging) {
+    try {
+        fs.mkdirSync(logDir, { recursive: true });
+    } catch (error) {
+        disableFileLogging(error);
+    }
 }
 
 // Rotate log file daily: move previous log to logs/app-YYYY-MM-DD.log if date changed
@@ -29,11 +44,12 @@ function rotateLogFileIfNeeded() {
 function logToFile(message) {
     const line = `[${new Date().toISOString()}] ${String(message).replace(/[\r\n]+/g, '\\n')}`;
     if (logToConsole) console.log(line);
+    if (!fileLogging) return;
     try {
         rotateLogFileIfNeeded();
         fs.appendFileSync(logFile, `${line}\n`);
     } catch (error) {
-        console.error('Failed to write log file:', error.message);
+        disableFileLogging(error);
     }
 }
 

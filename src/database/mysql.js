@@ -1,5 +1,6 @@
 const mysql = require('mysql2/promise');
 const { logToFile } = require('../utils/logger');
+const { sslOptions } = require('./ssl');
 
 async function connect() {
     logToFile('Initializing MySQL database connection...');
@@ -10,6 +11,7 @@ async function connect() {
         password: process.env.MYSQL_PASSWORD,
         database: process.env.MYSQL_DATABASE,
         timezone: 'Z', // store and read DATETIME values as UTC
+        ssl: sslOptions(process.env.MYSQL_SSL, process.env.MYSQL_SSL_CA),
     });
 
     await pool.query(`
