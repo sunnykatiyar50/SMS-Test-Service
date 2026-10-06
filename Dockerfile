@@ -14,13 +14,16 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 
-# The entrypoint fixes ownership of mounted data/log directories, then runs the app as the "node" user.
+# The entrypoint checks that mounted data/log directories are writable and explains how to fix them if not.
 # Stripping \r keeps it working when the file was checked out on Windows with CRLF line endings.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod 755 /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /app/data /app/logs \
     && chown -R node:node /app/data /app/logs
+
+# Run as the unprivileged node user (UID 1000, GID 1000). Named volumes inherit the ownership above.
+USER node
 
 EXPOSE 30001
 

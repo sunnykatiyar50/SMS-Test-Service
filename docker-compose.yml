@@ -1,38 +1,37 @@
-# Default (SQLite):   docker compose up --build
-# With PostgreSQL:    DB_TYPE=postgres docker compose --profile postgres up --build
+# SMS Test Service, using the prebuilt image from GitHub Container Registry.
 #
-# All settings come from .env (see sample.env); INGEST_API_KEYS, ADMIN_PASSWORD and SESSION_SECRET are required.
-# PORT in .env picks the host port; inside the container the app always listens on 30001.
-# Requires Docker Compose 2.24 or later.
+#   cp sample.env .env      # then fill in the required values
+#   docker compose up -d
+#   docker compose pull && docker compose up -d     # update to the latest image
+#
+# Every setting comes from .env. In .env, keep SQLITE_PATH and LOG_DIR unset (or pointing inside
+# /app/data and /app/logs), otherwise the database or logs end up outside the mounted folders.
+#
+# With the bundled PostgreSQL instead of SQLite, set these in .env, then run
+# `docker compose --profile postgres up -d`:
+#   DB_TYPE=postgres  PG_HOST=postgres  PG_PORT=5432  PG_USER=sms  PG_PASSWORD=<secret>  PG_DATABASE=sms
+# For a database elsewhere, point PG_HOST (or MYSQL_HOST) at it. Not localhost: inside the container
+# that is the container itself. Use host.docker.internal for a database on the Docker host.
 services:
   sms-test-service:
-    build: .
-    image: sms-test-service:latest
+    image: ghcr.io/sunnykatiyar50/sms-test-service:latest
     init: true
+    user: 1000:1000
+    env_file: .env
     ports:
-      - "${PORT:-30001}:30001"
-    env_file:
-      - path: .env
-        required: false
-    # Values here override .env. They pin container-internal paths and ports, and stop Compose
-    # from starting at all when a required secret is missing.
-    environment:
-      PORT: 30001
-      SQLITE_PATH: /app/data/sms-db.sqlite
-      LOG_DIR: /app/logs
-      INGEST_API_KEYS: ${INGEST_API_KEYS:?Set INGEST_API_KEYS in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
-      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
-      DB_TYPE: ${DB_TYPE:-sqlite}
-      # The bundled postgres service; shares its credentials with the service below
-      PG_HOST: postgres
-      PG_PORT: 5432
-      PG_USER: ${PG_USER:-sms}
-      PG_PASSWORD: ${PG_PASSWORD:-sms}
-      PG_DATABASE: ${PG_DATABASE:-sms}
+      # The app listens on PORT from .env (30001 if unset). To listen on one interface only, prefix
+      # an address, e.g. "100.110.180.13:${PORT:-30001}:${PORT:-30001}".
+      - "${PORT:-30001}:${PORT:-30001}"
     volumes:
       - sms-data:/app/data
       - sms-logs:/app/logs
+      # Or bind mounts to host folders. They must be writable by UID 1000:
+      #   sudo mkdir -p ./data ./logs && sudo chown -R 1000:1000 ./data ./logs
+      # - ./data:/app/data
+      # - ./logs:/app/logs
+    # Makes host.docker.internal (the Docker host) resolvable on Linux too
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,9 +41,10 @@ services:
   postgres:
     image: postgres:17-alpine
     profiles: ["postgres"]
+    # Only the database credentials, taken from the same PG_* values in .env that the app uses
     environment:
       POSTGRES_USER: ${PG_USER:-sms}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-sms}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-}
       POSTGRES_DB: ${PG_DATABASE:-sms}
     volumes:
       - pg-data:/var/lib/postgresql/data
