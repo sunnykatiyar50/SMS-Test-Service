@@ -40,7 +40,7 @@
     --sev-info-bg: #dcfce7; --sev-info-fg: #166534;
     --sev-debug-bg: #f3f4f6; --sev-debug-fg: #6b7280;
     color-scheme: light;
-    --sidebar-width: 216px;
+    --sidebar-width: 232px;
     --sidebar-collapsed: 60px;
     --radius: 8px;
     --mono: 'Cascadia Code', 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
@@ -354,8 +354,29 @@ body.sidebar-collapsed .sidebar .label {
     display: none;
 }
 
-body.sidebar-collapsed #collapseButton svg {
-    transform: rotate(180deg);
+/* Sidebar header: logo, name, and the collapse toggle on the right */
+.sidebar-toggle {
+    margin-left: auto;
+    padding: 6px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text);
+}
+
+.sidebar-toggle:hover {
+    background: var(--sidebar-hover);
+    color: #fff;
+}
+
+/* Collapsed: the toggle takes the logo's place, so the top icon is clearly "expand" */
+body.sidebar-collapsed .sidebar-brand .brand-mark {
+    display: none;
+}
+
+body.sidebar-collapsed .sidebar-toggle {
+    margin: 0 auto;
+    padding: 7px;
 }
 
 .sidebar-brand {
@@ -368,11 +389,13 @@ body.sidebar-collapsed #collapseButton svg {
 }
 
 .brand-name {
+    min-width: 0;
     font-weight: 700;
     color: #fff;
     font-size: 14.5px;
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .brand-mark {
@@ -1674,8 +1697,23 @@ body.login-page {
     font-weight: normal;
 }
 
+/* Column widths: the fixed columns get room to breathe; the key column takes the rest and wraps */
+.keys-table th:nth-child(1), .keys-table td:nth-child(1) { min-width: 180px; } /* Name */
+.keys-table th:nth-child(2), .keys-table td:nth-child(2) { min-width: 90px; }  /* Type */
+.keys-table th:nth-child(4), .keys-table td:nth-child(4) { min-width: 100px; } /* Messages */
+.keys-table th:nth-child(5), .keys-table td:nth-child(5) { min-width: 120px; } /* Last used */
+.keys-table th:nth-child(6), .keys-table td:nth-child(6) { min-width: 110px; } /* Created */
+.keys-table th:nth-child(7), .keys-table td:nth-child(7) { min-width: 90px; }  /* Revoke icon / Revoked tag */
+
+/* Narrower windows: drop the Created column so Revoke stays in view */
+@media (max-width: 1350px) {
+    .keys-table th:nth-child(6), .keys-table td:nth-child(6) { display: none; }
+}
+
 .key-value {
     width: 100%;
+    min-width: 200px;
+    white-space: normal;
 }
 
 .key-value code {
@@ -1688,6 +1726,7 @@ body.login-page {
     display: inline-flex;
     gap: 6px;
     margin-left: 10px;
+    margin-top: 2px;
     vertical-align: middle;
 }
 
@@ -1739,4 +1778,72 @@ body.login-page {
 /* Controls a viewer can't use (the server refuses these actions as well) */
 body.role-viewer .admin-only {
     display: none !important;
+}
+
+/* Icon-only actions (e.g. Revoke) with a text tooltip on hover / keyboard focus */
+.icon-action {
+    padding: 6px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--muted);
+}
+
+.icon-action svg {
+    width: 17px;
+    height: 17px;
+}
+
+.icon-action.danger-icon:hover,
+.icon-action.danger-icon:focus-visible {
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    outline: none;
+}
+
+.revoked-tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    border: 1px solid var(--border-strong);
+    cursor: default;
+}
+
+/* Tooltip, shown to the left so it stays inside the (horizontally scrollable) table card */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px 8px;
+    border-radius: 5px;
+    /* Inverted from the page: dark on the light theme, light on the dark theme */
+    background: var(--text);
+    color: var(--surface);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 10;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+    opacity: 1;
 }

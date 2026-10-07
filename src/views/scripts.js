@@ -157,13 +157,13 @@ function setSidebarCollapsed(collapsed) {
     const button = $('collapseButton');
     button.setAttribute('aria-expanded', String(!collapsed));
     button.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
-    button.querySelector('.label').textContent = collapsed ? 'Expand' : 'Collapse';
+    button.setAttribute('aria-label', button.title);
     saveSetting('sms_sidebar_collapsed', collapsed ? 'yes' : 'no');
 }
 
 // --- Resizable sidebar ---
 
-const SIDEBAR_DEFAULT = 216;
+const SIDEBAR_DEFAULT = 232;
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 400;
 const SIDEBAR_COLLAPSE_AT = 120; // dragging narrower than this collapses to icons
@@ -784,6 +784,15 @@ async function revealKey(rowId, url) {
     return data.secret;
 }
 
+// An inline SVG icon from fixed markup in this file (never from message or key data)
+function svgIcon(innerMarkup) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = innerMarkup;
+    return svg;
+}
+
 function keyRow({ id, name, scope, prefix, source, messageCount, lastUsedAt, createdAt, revokedAt }) {
     const rowId = id;
     const revealUrl = `/api/keys/${id}/reveal`;
@@ -841,10 +850,17 @@ function keyRow({ id, name, scope, prefix, source, messageCount, lastUsedAt, cre
 
     const actionCell = el('td', 'key-row-action');
     if (revokedAt) {
-        actionCell.appendChild(el('span', 'muted', `Revoked ${new Date(revokedAt).toLocaleDateString()}`));
+        const revoked = el('span', 'revoked-tag', 'Revoked');
+        revoked.tabIndex = 0;
+        revoked.dataset.tooltip = `Revoked ${new Date(revokedAt).toLocaleString()}`;
+        actionCell.appendChild(revoked);
     } else {
-        const revoke = el('button', 'danger-ghost small', 'Revoke');
+        // Icon button; "Revoke key" appears as a tooltip on hover or keyboard focus
+        const revoke = el('button', 'icon-action danger-icon');
         revoke.type = 'button';
+        revoke.dataset.tooltip = 'Revoke key';
+        revoke.setAttribute('aria-label', `Revoke key "${name}"`);
+        revoke.appendChild(svgIcon('<circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>'));
         revoke.addEventListener('click', () => revokeKey(id, name));
         actionCell.appendChild(revoke);
     }
