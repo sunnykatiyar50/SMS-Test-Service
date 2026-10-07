@@ -36,7 +36,9 @@ const ingest = body => request(app).post('/api/messages').set('X-API-Key', INGES
 before(async () => {
     db = await initializeDatabase();
     const config = loadConfig(env);
-    app = createApp({ config, messageModel: new MessageModel(db), apiKeyModel: new ApiKeyModel(db, { encryptionSecret: config.sessionSecret }) });
+    const apiKeyModel = new ApiKeyModel(db, { encryptionSecret: config.sessionSecret });
+    await apiKeyModel.importKeys(config.ingestApiKeys); // as src/app.js does at startup
+    app = createApp({ config, messageModel: new MessageModel(db), apiKeyModel });
 });
 
 after(async () => {

@@ -9,7 +9,7 @@ function toKey(row, messageCounts) {
         name: row.name,
         scope: row.scope,
         prefix: row.key_prefix,
-        source: 'dashboard',
+        source: row.source || 'dashboard', // 'dashboard', or 'env' when imported from INGEST_API_KEYS
         createdAt: toIso(row.created_at),
         lastUsedAt: toIso(row.last_used_at),
         revokedAt: toIso(row.revoked_at),
@@ -47,14 +47,14 @@ class ApiKeyModel {
         return rows.length > 0;
     }
 
-    // Returns the new key's metadata and the full key
-    async create({ name, scope }) {
-        const secret = generateApiKey(scope);
+    // Returns the new key's metadata and the full key. `secret` is only given when importing an
+    // existing key; otherwise a new one is generated.
+    async create({ name, scope, secret = generateApiKey(scope), source = 'dashboard' }) {
         const createdAt = new Date();
         const id = await this.db.insert(
-            `INSERT INTO api_keys (name, scope, key_hash, key_prefix, key_encrypted, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [name, scope, hashApiKey(secret), keyPrefix(secret), this.cipher.encrypt(secret), createdAt]
+            `INSERT INTO api_keys (name, scope, key_hash, key_prefix, key_encrypted, source, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [name, scope, hashApiKey(secret), keyPrefix(secret), this.cipher.encrypt(secret), source, createdAt]
         );
         const [row] = await this.db.all('SELECT * FROM api_keys WHERE id = ?', [Number(id)]);
         return { key: toKey(row, new Map()), secret };
@@ -75,9 +75,27 @@ class ApiKeyModel {
         return { key: toKey(row, new Map()), changed: changed > 0 };
     }
 
+    // Imports INGEST_API_KEYS entries as Send keys, keeping their values so apps don't change.
+    // Runs on every start and is idempotent: a key whose value is already stored, including one
+    // revoked in the dashboard, is skipped, so revoking it sticks even if it's still in .env.
+    // If its name is taken by a different key, it gets a suffix (name-2, name-3, ...).
+    async importKeys(entries) {
+        const imported = [];
+        for (const { name, key } of entries) {
+            const existing = await this.db.all('SELECT id FROM api_keys WHERE key_hash = ?', [hashApiKey(key)]);
+            if (existing.length) continue;
+            const base = (name || 'imported').slice(0, 60); // the column holds 64; leave room for a suffix
+            let finalName = base;
+            for (let n = 2; await this.nameExists(finalName); n += 1) finalName = `${base}-${n}`;
+            await this.create({ name: finalName, scope: 'send', secret: key, source: 'env' });
+            imported.push({ name, storedAs: finalName });
+        }
+        return imported;
+    }
+
     // Looks up an active key by its value; returns { id, name, scope } or null
     async authenticate(presented) {
-        if (typeof presented !== 'string' || !presented.startsWith('sms_')) return null;
+        if (typeof presented !== 'string' || !presented || presented.length > 512) return null;
         const [row] = await this.db.all(
             'SELECT id, name, scope FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL',
             [hashApiKey(presented)]

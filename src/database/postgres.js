@@ -38,11 +38,13 @@ async function connect() {
             key_hash CHAR(64) NOT NULL UNIQUE,
             key_prefix VARCHAR(32) NOT NULL,
             key_encrypted TEXT NOT NULL,
+            source VARCHAR(16) NOT NULL DEFAULT 'dashboard',
             created_at TIMESTAMPTZ NOT NULL,
             last_used_at TIMESTAMPTZ,
             revoked_at TIMESTAMPTZ
         )
     `);
+    await pool.query("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'dashboard'");
 
     return {
         dialect: 'postgres',

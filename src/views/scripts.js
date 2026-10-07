@@ -716,10 +716,10 @@ async function sendMessage(event) {
 
 // --- API keys ---
 
-// Full keys revealed on this page, by row ('db:<id>' or 'env:<name>'). Only kept while the page is
-// open, and cleared when navigating to another view.
+// Full keys revealed on this page, by key id. Only kept while the page is open, and cleared when
+// navigating to another view.
 const revealedKeys = new Map();
-let keysData = { keys: [], envKeys: [], adminTokenConfigured: false };
+let keysData = { keys: [], adminTokenConfigured: false };
 
 function forgetRevealedKeys() {
     revealedKeys.clear();
@@ -741,7 +741,7 @@ async function loadKeys() {
         if (!response.ok) throw new Error(data.error || response.statusText);
         keysData = data;
     } catch (error) {
-        keysData = { keys: [], envKeys: [], adminTokenConfigured: false };
+        keysData = { keys: [], adminTokenConfigured: false };
         $('keysFootnote').textContent = `Could not load API keys: ${error.message}`;
     }
     renderKeys();
@@ -772,12 +772,18 @@ async function revealKey(rowId, url) {
     return data.secret;
 }
 
-function keyRow({ rowId, revealUrl, name, scope, prefix, source, messageCount, lastUsedAt, createdAt, revokedAt, id }) {
+function keyRow({ id, name, scope, prefix, source, messageCount, lastUsedAt, createdAt, revokedAt }) {
+    const rowId = id;
+    const revealUrl = `/api/keys/${id}/reveal`;
     const tr = el('tr', revokedAt ? 'key-revoked' : '');
 
     const nameCell = el('td', 'key-name');
     nameCell.appendChild(el('span', null, name));
-    if (source === 'env') nameCell.appendChild(el('span', 'chip', '.env'));
+    if (source === 'env') {
+        const chip = el('span', 'chip', 'from .env');
+        chip.title = 'Imported from INGEST_API_KEYS. It is managed here now: revoking it works even if it is still in .env.';
+        nameCell.appendChild(chip);
+    }
     tr.appendChild(nameCell);
 
     const typeCell = el('td');
@@ -786,7 +792,7 @@ function keyRow({ rowId, revealUrl, name, scope, prefix, source, messageCount, l
 
     const keyCell = el('td', 'key-value');
     const shown = revealedKeys.get(rowId);
-    keyCell.appendChild(el('code', null, shown || (prefix ? `${prefix}…` : '••••••••••••')));
+    keyCell.appendChild(el('code', null, shown || `${prefix}…`));
     if (!revokedAt) {
         const actions = el('span', 'key-actions');
         const toggle = el('button', 'ghost small', shown ? 'Hide' : 'Show');
@@ -818,16 +824,12 @@ function keyRow({ rowId, revealUrl, name, scope, prefix, source, messageCount, l
     tr.appendChild(keyCell);
 
     tr.appendChild(el('td', 'num', String(messageCount || 0)));
-    tr.appendChild(el('td', 'muted', source === 'env' ? '—' : lastUsedAt ? formatMessageTime(lastUsedAt) : 'Never'));
-    tr.appendChild(el('td', 'muted', createdAt ? new Date(createdAt).toLocaleDateString() : '—'));
+    tr.appendChild(el('td', 'muted', lastUsedAt ? formatMessageTime(lastUsedAt) : 'Never'));
+    tr.appendChild(el('td', 'muted', new Date(createdAt).toLocaleDateString()));
 
     const actionCell = el('td', 'key-row-action');
     if (revokedAt) {
         actionCell.appendChild(el('span', 'muted', `Revoked ${new Date(revokedAt).toLocaleDateString()}`));
-    } else if (source === 'env') {
-        const note = el('span', 'muted', 'set in .env');
-        note.title = 'Remove it from INGEST_API_KEYS in .env and restart to revoke it';
-        actionCell.appendChild(note);
     } else {
         const revoke = el('button', 'danger-ghost small', 'Revoke');
         revoke.type = 'button';
@@ -841,11 +843,7 @@ function keyRow({ rowId, revealUrl, name, scope, prefix, source, messageCount, l
 function renderKeys() {
     const body = $('keysBody');
     body.replaceChildren();
-    const rows = [
-        ...keysData.keys.filter(k => !k.revokedAt).map(k => ({ ...k, rowId: `db:${k.id}`, revealUrl: `/api/keys/${k.id}/reveal` })),
-        ...keysData.envKeys.map(k => ({ ...k, rowId: `env:${k.name}`, revealUrl: `/api/keys/env/${encodeURIComponent(k.name)}/reveal` })),
-        ...keysData.keys.filter(k => k.revokedAt).map(k => ({ ...k, rowId: `db:${k.id}` })),
-    ];
+    const rows = keysData.keys; // active first, then revoked (sorted by the server)
     rows.forEach(row => body.appendChild(keyRow(row)));
     $('keysEmpty').classList.toggle('hidden', rows.length > 0);
     document.querySelector('.keys-table').classList.toggle('hidden', rows.length === 0);
@@ -885,7 +883,7 @@ async function createKey(event) {
             $('keyNameInput').classList.add('invalid');
             return;
         }
-        revealedKeys.set(`db:${data.key.id}`, data.secret);
+        revealedKeys.set(data.key.id, data.secret);
         showKeyForm(false);
         $('newKeyName').textContent = data.key.name;
         $('newKeySecret').textContent = data.secret;
@@ -903,7 +901,7 @@ async function revokeKey(id, name) {
     if (!confirm(`Revoke "${name}"?\n\nAnything using this key stops working immediately. This can't be undone.`)) return;
     const { response, data } = await apiJson(`/api/keys/${id}`, { method: 'DELETE' });
     if (!response.ok) alert(data.error || 'Could not revoke the key.');
-    revealedKeys.delete(`db:${id}`);
+    revealedKeys.delete(id);
     await loadKeys();
 }
 

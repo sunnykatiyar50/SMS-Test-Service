@@ -39,14 +39,17 @@ const createKey = async (name, scope) => {
 const sendWith = (key, phone = '15551110000', message = 'Your code is 424242') =>
     request(app).post('/api/messages').set('X-API-Key', key).send({ phone, message });
 
-function buildApp(secret) {
-    const config = loadConfig({ ...env, SESSION_SECRET: secret });
-    return createApp({ config, messageModel: new MessageModel(db), apiKeyModel: new ApiKeyModel(db, { encryptionSecret: config.sessionSecret }) });
+// Mirrors src/app.js: build the models, import INGEST_API_KEYS, create the app
+async function buildApp(overrides = {}) {
+    const config = loadConfig({ ...env, ...overrides });
+    const apiKeyModel = new ApiKeyModel(db, { encryptionSecret: config.sessionSecret });
+    const imported = await apiKeyModel.importKeys(config.ingestApiKeys);
+    return { app: createApp({ config, messageModel: new MessageModel(db), apiKeyModel }), imported };
 }
 
 before(async () => {
     db = await initializeDatabase();
-    app = buildApp(env.SESSION_SECRET);
+    ({ app } = await buildApp());
 });
 
 after(async () => {
@@ -67,7 +70,6 @@ describe('managing keys', () => {
         const listed = list.body.keys.find(k => k.name === 'checkout-app');
         assert.ok(listed);
         assert.equal(JSON.stringify(list.body).includes(secret), false, 'the list must never contain secrets');
-        assert.deepEqual(list.body.envKeys.map(k => k.name), ['legacy']);
         assert.equal(list.body.adminTokenConfigured, true);
     });
 
@@ -79,8 +81,13 @@ describe('managing keys', () => {
         assert.equal(res.headers['cache-control'], 'no-store');
     });
 
-    test('reveals .env keys too', async () => {
-        const res = await admin(request(app).post('/api/keys/env/legacy/reveal'));
+    test('INGEST_API_KEYS entries are imported as ordinary Send keys (same value, copyable)', async () => {
+        const list = await admin(request(app).get('/api/keys'));
+        const legacy = list.body.keys.find(k => k.name === 'legacy');
+        assert.equal(legacy.source, 'env');
+        assert.equal(legacy.scope, 'send');
+        assert.equal(legacy.prefix, ENV_KEY.slice(0, 6));
+        const res = await admin(request(app).post(`/api/keys/${legacy.id}/reveal`));
         assert.equal(res.body.secret, ENV_KEY);
     });
 
@@ -177,8 +184,11 @@ describe('using keys', () => {
         assert.equal((await admin(request(app).post(`/api/keys/${key.id}/reveal`))).status, 410);
     });
 
-    test('.env keys keep working', async () => {
+    test('imported .env keys work and record when they were used', async () => {
         assert.equal((await sendWith(ENV_KEY)).status, 201);
+        await new Promise(r => setTimeout(r, 50));
+        const list = await admin(request(app).get('/api/keys'));
+        assert.ok(list.body.keys.find(k => k.name === 'legacy').lastUsedAt);
     });
 
     test('unknown keys are rejected', async () => {
@@ -187,10 +197,42 @@ describe('using keys', () => {
     });
 });
 
+describe('importing INGEST_API_KEYS', () => {
+    test('is idempotent across restarts', async () => {
+        const { imported } = await buildApp();
+        assert.deepEqual(imported, []);
+        const list = await admin(request(app).get('/api/keys'));
+        assert.equal(list.body.keys.filter(k => k.source === 'env').length, 1);
+    });
+
+    test('a key revoked in the dashboard stays revoked, even while it is still in .env', async () => {
+        const value = 'revoke-me-env-key-0123456789';
+        const { app: started } = await buildApp({ INGEST_API_KEYS: `legacy:${ENV_KEY},old-app:${value}` });
+        const key = (await request(started).get('/api/keys').set('Authorization', `Bearer ${ADMIN_TOKEN}`)).body.keys.find(k => k.name === 'old-app');
+        await request(started).delete(`/api/keys/${key.id}`).set('Authorization', `Bearer ${ADMIN_TOKEN}`);
+        const { app: restarted, imported } = await buildApp({ INGEST_API_KEYS: `legacy:${ENV_KEY},old-app:${value}` });
+        assert.deepEqual(imported, []);
+        const res = await request(restarted).post('/api/messages').set('X-API-Key', value).send({ phone: '15556660000', message: 'x' });
+        assert.equal(res.status, 401);
+    });
+
+    test('a name already used by a different key gets a suffix', async () => {
+        await createKey('mobile', 'send');
+        const { imported } = await buildApp({ INGEST_API_KEYS: 'mobile:another-env-key-0123456789' });
+        assert.deepEqual(imported, [{ name: 'mobile', storedAs: 'mobile-2' }]);
+    });
+
+    test('removing a key from .env does not revoke it (it is managed in the dashboard now)', async () => {
+        const { app: withoutEnv } = await buildApp({ INGEST_API_KEYS: '' });
+        const res = await request(withoutEnv).post('/api/messages').set('X-API-Key', ENV_KEY).send({ phone: '15557770000', message: 'x' });
+        assert.equal(res.status, 201);
+    });
+});
+
 describe('SESSION_SECRET changes', () => {
     test('keys keep working but can no longer be revealed', async () => {
         const { key, secret } = await createKey('survivor', 'send');
-        const otherApp = buildApp('t'.repeat(48));
+        const { app: otherApp } = await buildApp({ SESSION_SECRET: 't'.repeat(48) });
         assert.equal((await request(otherApp).post('/api/messages').set('X-API-Key', secret).send({ phone: '15554440000', message: 'hi' })).status, 201);
         const reveal = await request(otherApp).post(`/api/keys/${key.id}/reveal`).set('Authorization', `Bearer ${ADMIN_TOKEN}`);
         assert.equal(reveal.status, 409);

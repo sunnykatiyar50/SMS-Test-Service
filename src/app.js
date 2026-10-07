@@ -34,8 +34,14 @@ async function main() {
     const messageModel = new MessageModel(db);
     // Dashboard-created API keys are encrypted with a key derived from SESSION_SECRET
     const apiKeyModel = new ApiKeyModel(db, { encryptionSecret: config.sessionSecret });
+    // INGEST_API_KEYS entries become ordinary keys, managed (and revoked) on the dashboard
+    for (const { name, storedAs } of await apiKeyModel.importKeys(config.ingestApiKeys)) {
+        logToFile(storedAs === name
+            ? `Imported API key "${name}" from INGEST_API_KEYS; manage it on the API keys page`
+            : `Imported API key "${name}" from INGEST_API_KEYS as "${storedAs}" (the name was already taken)`);
+    }
     const activeKeys = (await apiKeyModel.list()).filter(k => !k.revokedAt).length;
-    if (!config.authDisabled && activeKeys === 0 && config.ingestApiKeys.length === 0) {
+    if (!config.authDisabled && activeKeys === 0) {
         logToFile('No API keys yet: sign in to the dashboard and create one on the API keys page');
     }
     scheduleRetention(messageModel, config.retentionDays);

@@ -6,7 +6,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Who can do what:
 //   admin (dashboard session, ADMIN_TOKEN, or AUTH_DISABLED)  everything
-//   Send key (INGEST_API_KEYS, or created in the dashboard)    POST /api/messages
+//   Send key (created in the dashboard, or imported from INGEST_API_KEYS)   POST /api/messages
 //   Read key (created in the dashboard)                         GET /api/messages and /api/messages/latest
 function createAuth(config, { apiKeyModel } = {}) {
     const ttlMs = config.sessionTtlHours * 60 * 60 * 1000;
@@ -34,19 +34,14 @@ function createAuth(config, { apiKeyModel } = {}) {
         return method !== 'cookie' || SAFE_METHODS.has(req.method) || req.get('x-requested-with') === 'fetch';
     }
 
-    // Finds the API key a request presents (X-API-Key, or Authorization: Bearer for dashboard keys).
-    // Returns { name, scope, source } or null.
+    // Finds the API key a request presents (X-API-Key, or Authorization: Bearer). All keys live in
+    // the database, including INGEST_API_KEYS entries, which are imported at startup.
+    // Returns { name, scope } or null.
     async function findApiKey(req) {
         const presented = req.get('x-api-key') || bearerToken(req);
-        if (!presented) return null;
-        // .env keys: compare against every key so the response time doesn't reveal which one matched
-        let envMatch = null;
-        for (const entry of config.ingestApiKeys) {
-            if (safeEqual(presented, entry.key) && !envMatch) envMatch = entry;
-        }
-        if (envMatch) return { name: envMatch.name, scope: 'send', source: 'env' };
-        const stored = apiKeyModel ? await apiKeyModel.authenticate(presented) : null;
-        return stored ? { name: stored.name, scope: stored.scope, source: 'dashboard' } : null;
+        if (!presented || !apiKeyModel) return null;
+        const stored = await apiKeyModel.authenticate(presented);
+        return stored ? { name: stored.name, scope: stored.scope } : null;
     }
 
     function requireAdmin(req, res, next) {

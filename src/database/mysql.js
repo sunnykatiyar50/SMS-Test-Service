@@ -39,11 +39,19 @@ async function connect() {
             key_hash CHAR(64) NOT NULL UNIQUE,
             key_prefix VARCHAR(32) NOT NULL,
             key_encrypted TEXT NOT NULL,
+            source VARCHAR(16) NOT NULL DEFAULT 'dashboard',
             created_at DATETIME(3) NOT NULL,
             last_used_at DATETIME(3),
             revoked_at DATETIME(3)
         )
     `);
+    const [sourceColumn] = await pool.query(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'api_keys' AND COLUMN_NAME = 'source'`
+    );
+    if (sourceColumn.length === 0) {
+        await pool.query("ALTER TABLE api_keys ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'dashboard'");
+    }
 
     return {
         dialect: 'mysql',

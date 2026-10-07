@@ -34,11 +34,16 @@ async function connect() {
             key_hash TEXT NOT NULL UNIQUE,
             key_prefix TEXT NOT NULL,
             key_encrypted TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'dashboard',
             created_at TEXT NOT NULL,
             last_used_at TEXT,
             revoked_at TEXT
         )`
     );
+    // Added after the table was first introduced
+    if (!db.prepare('PRAGMA table_info(api_keys)').all().some(c => c.name === 'source')) {
+        db.exec("ALTER TABLE api_keys ADD COLUMN source TEXT NOT NULL DEFAULT 'dashboard'");
+    }
 
     const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));
 

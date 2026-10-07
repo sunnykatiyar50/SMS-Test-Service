@@ -16,9 +16,11 @@ function hashApiKey(key) {
     return crypto.createHash('sha256').update(String(key)).digest('hex');
 }
 
-// What the dashboard shows for a key without revealing it: "sms_send_3f9aK2"
+// What the dashboard shows for a key without revealing it: "sms_send_3f9aK2", or the first
+// 6 characters of a key imported from INGEST_API_KEYS (which can have any format)
 function keyPrefix(key) {
-    return key.slice(0, key.indexOf('_', 4) + 7);
+    const typed = key.match(/^sms_(?:send|read)_/);
+    return typed ? key.slice(0, typed[0].length + 6) : key.slice(0, 6);
 }
 
 // Encrypts keys so the dashboard can show them again. The AES-256-GCM key is derived from a

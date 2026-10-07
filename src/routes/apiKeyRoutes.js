@@ -19,15 +19,9 @@ function createApiKeyRoutes({ apiKeyModel, auth, config }) {
         next();
     });
 
-    const envKeys = () => config.ingestApiKeys.map(k => ({ name: k.name, scope: 'send', source: 'env' }));
-
+    // All keys, including ones imported from INGEST_API_KEYS (source: 'env')
     router.get('/', async (req, res) => {
-        const [keys, counts] = await Promise.all([apiKeyModel.list(), apiKeyModel.messageCounts()]);
-        res.json({
-            keys,
-            envKeys: envKeys().map(k => ({ ...k, messageCount: counts.get(k.name) || 0 })),
-            adminTokenConfigured: Boolean(config.adminToken),
-        });
+        res.json({ keys: await apiKeyModel.list(), adminTokenConfigured: Boolean(config.adminToken) });
     });
 
     router.post('/', async (req, res) => {
@@ -36,8 +30,7 @@ function createApiKeyRoutes({ apiKeyModel, auth, config }) {
         const errors = {};
         if (!NAME_RE.test(name)) {
             errors.name = 'must be 1-64 characters: letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit';
-        } else if (name.toLowerCase() === 'dashboard' || envKeys().some(k => k.name.toLowerCase() === name.toLowerCase())
-            || (await apiKeyModel.nameExists(name))) {
+        } else if (name.toLowerCase() === 'dashboard' || (await apiKeyModel.nameExists(name))) {
             errors.name = 'is already used by another key';
         }
         if (!SCOPES.includes(body.scope)) errors.scope = `must be one of ${SCOPES.join(', ')}`;
@@ -50,13 +43,6 @@ function createApiKeyRoutes({ apiKeyModel, auth, config }) {
 
     // POST rather than GET: cookie-authenticated POSTs need the CSRF header, so another site
     // can't trigger it, and nothing in between will cache it
-    router.post('/env/:name/reveal', (req, res) => {
-        const match = config.ingestApiKeys.find(k => k.name === req.params.name);
-        if (!match) return res.status(404).json({ error: 'Key not found' });
-        logToFile(`API key revealed: "${match.name}" (.env) from ${req.ip}`);
-        res.json({ secret: match.key });
-    });
-
     router.post('/:id/reveal', async (req, res) => {
         const id = parseId(req.params.id);
         const found = id && (await apiKeyModel.reveal(id));

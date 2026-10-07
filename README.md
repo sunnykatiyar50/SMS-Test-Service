@@ -151,7 +151,11 @@ How keys are protected:
 - **If `SESSION_SECRET` changes:** existing keys keep working, but they can no longer be shown or copied. Create new ones if you need to copy them.
 - **Who can see keys:** only an admin (dashboard session or `ADMIN_TOKEN`) can list, show, create or revoke keys. API keys can't manage keys. Showing a key is logged with its name and the caller's IP, and these responses are never cached.
 
-Keys in `INGEST_API_KEYS` (`.env`, `name:key` pairs) still work as Send keys. They're listed on the page marked `.env` and can be copied there; to revoke one, remove it from `.env` and restart.
+**Keys from `.env`.** On startup, keys in `INGEST_API_KEYS` (`name:key` pairs) are imported into the database as Send keys, keeping their values so apps don't need changing. They show on the page tagged **from .env** and work exactly like dashboard keys: usage, last used, show and copy, revoke.
+- Importing runs on every start but adds each key only once.
+- A key you revoke on the dashboard stays revoked, even if it's still in `.env`.
+- Removing a key from `.env` does **not** revoke it: once imported, it's managed on the dashboard. You can delete `INGEST_API_KEYS` from `.env` after the first start.
+- If a different key already has the same name, the import gets a suffix (`mobile-2`), and the log says so.
 
 To turn off authentication completely for local development, set `AUTH_DISABLED=true`. Don't do this on a server other people can reach.
 
@@ -354,7 +358,7 @@ See `sample.env` for a commented template.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `30001` | Port the server listens on |
-| `INGEST_API_KEYS` | — | Optional. Send keys as comma-separated `name:key` pairs (16+ characters each), in addition to keys created on the dashboard's API keys page |
+| `INGEST_API_KEYS` | — | Optional. Send keys as comma-separated `name:key` pairs (16+ characters each), imported into the dashboard's API keys page on startup (see [API keys](#api-keys)) |
 | `ADMIN_USERNAME` | `admin` | Dashboard username. Changing it signs out existing sessions. |
 | `ADMIN_PASSWORD` | — | Required. Dashboard password |
 | `SESSION_SECRET` | — | Required. At least 32 characters; signs session cookies |
@@ -425,7 +429,7 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 
 - **The server exits with `Invalid auth configuration`:** one of the required auth settings is missing, too short, or still a `change-me` placeholder. The message lists what to fix.
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
-- **`401 Invalid or revoked API key`:** the key doesn't match an active key on the API keys page or in `INGEST_API_KEYS`. After changing `.env`, restart the server.
+- **`401 Invalid or revoked API key`:** the key doesn't match an active key on the API keys page. A key added to `INGEST_API_KEYS` is imported when the server restarts; a key revoked on the dashboard stays revoked even if it's still in `.env`.
 - **`403 This is a Read key…` / `This is a Send key…`:** the key's type doesn't allow that request. Sending needs a Send key, and reading needs a Read key.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
 - **`EACCES: permission denied` for `/app/logs/app.log` or `unable to open database file` in Docker:** the mounted folder isn't writable by UID 1000, which the container runs as. This usually happens when Docker created a bind-mount folder as root. Fix it once on the host with `sudo chown -R 1000:1000 <folder>`, or start the container once with `user: root` (Compose) / `--user root` to have it fixed automatically. The container's startup output names the folder and the command. If only the log folder is affected, the app keeps running and logs to stdout.
