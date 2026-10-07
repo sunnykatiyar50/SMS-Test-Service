@@ -20,7 +20,7 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
   - Quick time range in the sidebar: Last 10 minutes, Last 1 hour, Last 8 hours, Last 1 day, Last 1 week, Last 1 month, or All time
   - **Send test**: test form with validation, SMS segment counter, the raw API response, and the equivalent cURL command
   - **API reference**: endpoints, auth, and copyable examples generated for your server
-- Sign-in page with username and password from `.env`
+- Sign-in page with username and password from `.env`, for the admin and for optional read-only viewer accounts
 - Light and dark themes: the theme button (sidebar, or the corner of the sign-in page) cycles between System (follows the browser), Light, and Dark, and the choice is remembered
 - Phone numbers are masked in API responses and the dashboard (only the last 4 digits are shown)
 - Input validation, rate limiting, security headers (CSP), and optional automatic cleanup of old messages
@@ -134,7 +134,25 @@ npm test
 | Applications sending SMS | `X-API-Key: <key>` with a **Send** key | `POST /api/messages` only |
 | E2E tests reading OTPs | `Authorization: Bearer <key>` (or `X-API-Key`) with a **Read** key | `GET /api/messages`, `GET /api/messages/latest` |
 | Scripts needing full access | `Authorization: Bearer <ADMIN_TOKEN>` from `.env` | Everything |
-| People using the dashboard | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
+| Dashboard admin | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
+| Dashboard viewers | Sign in with an account from `VIEWER_USERS` | View and search messages only: no sending, deleting, or API keys |
+
+### Viewer accounts
+
+To let people look at messages without being able to change anything, list them in `.env`:
+
+```
+VIEWER_USERS=alice:a-long-password,bob:another-long-password
+```
+
+- **What viewers can do:** sign in on the same page as the admin, browse, search and filter all messages, open message details, copy codes, and read the API reference.
+- **What they can't do:** send test messages, delete messages, or see or manage API keys. Their sidebar doesn't show those pages, and the server refuses those requests with `403` as well.
+- **Format:** `username:password` pairs separated by commas. Usernames may use letters, digits, `.`, `_`, `@` and `-`. Passwords need at least 8 characters, and may contain `:` but not `,`. Restart the server after changing the list.
+
+Sessions follow `.env`:
+- changing a viewer's password, or `ADMIN_PASSWORD`, signs that account out on its next request;
+- removing a viewer ends their session;
+- the sidebar shows who is signed in, with "(viewer)" for viewer accounts.
 
 ### API keys
 
@@ -360,7 +378,8 @@ See `sample.env` for a commented template.
 | `PORT` | `30001` | Port the server listens on |
 | `INGEST_API_KEYS` | — | Optional. Send keys as comma-separated `name:key` pairs (16+ characters each), imported into the dashboard's API keys page on startup (see [API keys](#api-keys)) |
 | `ADMIN_USERNAME` | `admin` | Dashboard username. Changing it signs out existing sessions. |
-| `ADMIN_PASSWORD` | — | Required. Dashboard password |
+| `ADMIN_PASSWORD` | — | Required. Dashboard password. Changing it signs the admin out |
+| `VIEWER_USERS` | — | Optional read-only dashboard accounts: `username:password` pairs separated by commas (see [Viewer accounts](#viewer-accounts)) |
 | `SESSION_SECRET` | — | Required. At least 32 characters; signs session cookies |
 | `ADMIN_TOKEN` | — | Optional bearer token for scripts and tests (at least 16 characters) |
 | `SESSION_TTL_HOURS` | `12` | How long a dashboard sign-in lasts |
