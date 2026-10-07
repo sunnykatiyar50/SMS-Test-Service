@@ -235,7 +235,7 @@ describe('dashboard session', () => {
     test('reports the signed-in username', async () => {
         const cookie = await login();
         const res = await request(app).get('/auth/status').set('Cookie', cookie);
-        assert.deepEqual(res.body, { authenticated: true, authDisabled: false, username: 'opsadmin' });
+        assert.deepEqual(res.body, { authenticated: true, authDisabled: false, username: 'opsadmin', role: 'admin' });
     });
 
     test('redirects the login page to the dashboard when already signed in', async () => {

@@ -1734,3 +1734,9 @@ body.login-page {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* ===== Viewer accounts ===== */
+/* Controls a viewer can't use (the server refuses these actions as well) */
+body.role-viewer .admin-only {
+    display: none !important;
+}

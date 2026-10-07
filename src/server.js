@@ -65,13 +65,13 @@ function createApp({ config, messageModel, apiKeyModel }) {
 
     // The dashboard needs a session; the login page and static assets are public
     const dashboard = (req, res) => {
-        if (!auth.adminAuthMethod(req)) return res.redirect('/login.html');
+        if (!auth.currentUser(req)) return res.redirect('/login.html');
         res.sendFile(path.join(viewsDir, 'index.html'));
     };
     app.get('/', dashboard);
     app.get('/index.html', dashboard);
     app.get('/login.html', (req, res) => {
-        if (auth.adminAuthMethod(req)) return res.redirect('/');
+        if (auth.currentUser(req)) return res.redirect('/');
         res.sendFile(path.join(viewsDir, 'login.html'));
     });
     app.use(express.static(viewsDir, { index: false }));

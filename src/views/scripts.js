@@ -129,6 +129,10 @@ const VIEW_TITLES = { messages: 'Messages', send: 'Send test', keys: 'API keys',
 
 function currentView() {
     const name = location.hash.replace(/^#\/?/, '');
+    if (userRole === 'viewer' && ADMIN_VIEWS.includes(name)) {
+        history.replaceState(null, '', '#/messages'); // keep the address bar honest
+        return 'messages';
+    }
     return VIEWS.includes(name) ? name : 'messages';
 }
 
@@ -237,16 +241,24 @@ function initSidebarResizer() {
     });
 }
 
+// The signed-in account's role: 'admin' or 'viewer'. Viewers only see messages; the server
+// enforces this too, the dashboard just hides what they can't use.
+let userRole = 'admin';
+const ADMIN_VIEWS = ['send', 'keys'];
+
 async function loadSession() {
     try {
         const response = await fetch('/auth/status');
         const status = await response.json();
-        $('currentUser').textContent = status.username || (status.authDisabled ? 'No sign-in' : 'admin');
+        userRole = status.role === 'viewer' ? 'viewer' : 'admin';
+        const name = status.username || (status.authDisabled ? 'No sign-in' : 'admin');
+        $('currentUser').textContent = userRole === 'viewer' ? `${name} (viewer)` : name;
         $('authWarning').classList.toggle('hidden', !status.authDisabled);
         $('logoutButton').classList.toggle('hidden', Boolean(status.authDisabled));
     } catch {
         // keep defaults
     }
+    document.body.classList.toggle('role-viewer', userRole === 'viewer');
 }
 
 async function logout() {
@@ -331,7 +343,7 @@ function renderMessages() {
         check.dataset.id = String(msg.id);
         check.setAttribute('aria-label', `Select message ${msg.id}`);
         check.addEventListener('change', updateSelectionInfo);
-        const checkWrap = el('label', 'row-check');
+        const checkWrap = el('label', 'row-check admin-only');
         checkWrap.appendChild(check);
 
         const top = el('div', 'row-top');
@@ -938,7 +950,6 @@ function renderApiReference() {
 
 window.addEventListener('DOMContentLoaded', () => {
     setSidebarCollapsed(readSetting('sms_sidebar_collapsed', 'no') === 'yes');
-    loadSession();
     renderApiReference();
     onFormInput();
 
@@ -1013,5 +1024,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('hashchange', showView);
-    showView();
+    // Know the role before showing a view, so a viewer never lands on an admin-only page
+    loadSession().then(showView);
 });

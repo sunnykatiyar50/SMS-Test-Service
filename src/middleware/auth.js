@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { createSessionToken, verifySessionToken, safeEqual, parseCookies } = require('../utils/session');
 const { logToFile } = require('../utils/logger');
 
@@ -5,27 +6,49 @@ const SESSION_COOKIE = 'sms_session';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Who can do what:
-//   admin (dashboard session, ADMIN_TOKEN, or AUTH_DISABLED)  everything
+//   admin  (ADMIN_USERNAME sign-in, ADMIN_TOKEN, or AUTH_DISABLED)       everything
+//   viewer (VIEWER_USERS sign-in)                                        view messages only
 //   Send key (created in the dashboard, or imported from INGEST_API_KEYS)   POST /api/messages
 //   Read key (created in the dashboard)                         GET /api/messages and /api/messages/latest
 function createAuth(config, { apiKeyModel } = {}) {
     const ttlMs = config.sessionTtlHours * 60 * 60 * 1000;
+
+    const accounts = [
+        { username: config.adminUsername, password: config.adminPassword, role: 'admin' },
+        ...config.viewerUsers.map(u => ({ username: u.username, password: u.password, role: 'viewer' })),
+    ];
+
+    // Stored in the session so that changing an account's password in .env signs it out.
+    // An HMAC keyed with SESSION_SECRET, so the (readable) cookie reveals nothing about the password.
+    const passwordFingerprint = password =>
+        crypto.createHmac('sha256', config.sessionSecret).update(`password:${password}`).digest('base64url').slice(0, 22);
 
     const bearerToken = req => {
         const header = req.get('authorization') || '';
         return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     };
 
-    // Returns how the request is authenticated as admin: 'disabled', 'bearer', 'cookie' or null
-    function adminAuthMethod(req) {
-        if (config.authDisabled) return 'disabled';
-        const bearer = bearerToken(req);
-        if (config.adminToken && bearer && safeEqual(bearer, config.adminToken)) return 'bearer';
+    // The signed-in dashboard account, if the session cookie is valid and still matches .env:
+    // the account must still exist with the same role and password.
+    function sessionAccount(req) {
         const token = parseCookies(req.get('cookie'))[SESSION_COOKIE];
         const session = token && verifySessionToken(token, config.sessionSecret);
-        // Changing ADMIN_USERNAME signs out existing sessions
-        if (session && session.u === config.adminUsername) return 'cookie';
-        return null;
+        if (!session) return null;
+        const account = accounts.find(a => a.username === session.u && a.role === session.r);
+        if (!account || !safeEqual(session.p || '', passwordFingerprint(account.password))) return null;
+        return account;
+    }
+
+    // Who is making the request (apart from API keys): { role: 'admin' | 'viewer', method, username } or null.
+    // method is 'disabled', 'bearer' (ADMIN_TOKEN) or 'cookie' (dashboard session).
+    function currentUser(req) {
+        if (config.authDisabled) return { role: 'admin', method: 'disabled', username: null };
+        const bearer = bearerToken(req);
+        if (config.adminToken && bearer && safeEqual(bearer, config.adminToken)) {
+            return { role: 'admin', method: 'bearer', username: null };
+        }
+        const account = sessionAccount(req);
+        return account ? { role: account.role, method: 'cookie', username: account.username } : null;
     }
 
     // Cookie-authenticated writes must carry a custom header. Browsers cannot add it to a
@@ -45,20 +68,24 @@ function createAuth(config, { apiKeyModel } = {}) {
     }
 
     function requireAdmin(req, res, next) {
-        const method = adminAuthMethod(req);
-        if (!method) return res.status(401).json({ error: 'Authentication required' });
-        if (!passesCsrfCheck(req, method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
-        req.auth = { method, isAdmin: true };
+        const user = currentUser(req);
+        if (!user) return res.status(401).json({ error: 'Authentication required' });
+        if (user.role !== 'admin') return res.status(403).json({ error: 'This needs an admin account' });
+        if (!passesCsrfCheck(req, user.method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
+        req.auth = { ...user, isAdmin: true };
         next();
     }
 
-    // Admin, or an API key with the given scope
-    function requireKeyOrAdmin(scope) {
+    // An admin, a viewer (reading only), or an API key with the given scope
+    function requireKeyOrUser(scope) {
         return async (req, res, next) => {
-            const method = adminAuthMethod(req);
-            if (method) {
-                if (!passesCsrfCheck(req, method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
-                req.auth = { method, apiKeyName: 'dashboard', isAdmin: true };
+            const user = currentUser(req);
+            if (user) {
+                if (user.role === 'viewer' && scope !== 'read') {
+                    return res.status(403).json({ error: 'Viewer accounts can only view messages' });
+                }
+                if (!passesCsrfCheck(req, user.method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
+                req.auth = { ...user, apiKeyName: 'dashboard', isAdmin: user.role === 'admin' };
                 return next();
             }
             const key = await findApiKey(req);
@@ -87,24 +114,31 @@ function createAuth(config, { apiKeyModel } = {}) {
     }
 
     function login(req, res) {
-        if (config.authDisabled) return res.json({ success: true });
+        if (config.authDisabled) return res.json({ success: true, role: 'admin' });
         const { username, password } = req.body || {};
         if (typeof username !== 'string' || typeof password !== 'string') {
             return res.status(400).json({ error: 'Enter your username and password' });
         }
-        // Check both so the response time doesn't reveal which one was wrong
-        const userOk = safeEqual(username.trim(), config.adminUsername);
-        const passOk = safeEqual(password, config.adminPassword);
-        if (!userOk || !passOk) {
+        // Compare against every account, both fields, so the response time doesn't reveal
+        // whether a username exists or which field was wrong
+        let match = null;
+        for (const account of accounts) {
+            const userOk = safeEqual(username.trim(), account.username);
+            const passOk = safeEqual(password, account.password);
+            if (userOk && passOk && !match) match = account;
+        }
+        if (!match) {
             logToFile(`Failed dashboard login from ${req.ip}`);
             return res.status(401).json({ error: 'Incorrect username or password' });
         }
-        res.cookie(SESSION_COOKIE, createSessionToken(config.sessionSecret, ttlMs, { u: config.adminUsername }), {
-            ...cookieOptions(req),
-            maxAge: ttlMs,
+        const token = createSessionToken(config.sessionSecret, ttlMs, {
+            u: match.username,
+            r: match.role,
+            p: passwordFingerprint(match.password),
         });
-        logToFile(`Dashboard login from ${req.ip}`);
-        res.json({ success: true });
+        res.cookie(SESSION_COOKIE, token, { ...cookieOptions(req), maxAge: ttlMs });
+        logToFile(`Dashboard login: "${match.username}" (${match.role}) from ${req.ip}`);
+        res.json({ success: true, role: match.role });
     }
 
     function logout(req, res) {
@@ -113,19 +147,20 @@ function createAuth(config, { apiKeyModel } = {}) {
     }
 
     function status(req, res) {
-        const method = adminAuthMethod(req);
+        const user = currentUser(req);
         res.json({
-            authenticated: Boolean(method),
+            authenticated: Boolean(user),
             authDisabled: config.authDisabled,
-            username: method === 'cookie' ? config.adminUsername : null,
+            username: user ? user.username : null,
+            role: user ? user.role : null,
         });
     }
 
     return {
-        adminAuthMethod,
+        currentUser,
         requireAdmin,
-        requireIngest: requireKeyOrAdmin('send'),
-        requireRead: requireKeyOrAdmin('read'),
+        requireIngest: requireKeyOrUser('send'),
+        requireRead: requireKeyOrUser('read'),
         login,
         logout,
         status,
