@@ -157,13 +157,13 @@ function setSidebarCollapsed(collapsed) {
     const button = $('collapseButton');
     button.setAttribute('aria-expanded', String(!collapsed));
     button.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
-    button.querySelector('.label').textContent = collapsed ? 'Expand' : 'Collapse';
+    button.setAttribute('aria-label', button.title);
     saveSetting('sms_sidebar_collapsed', collapsed ? 'yes' : 'no');
 }
 
 // --- Resizable sidebar ---
 
-const SIDEBAR_DEFAULT = 216;
+const SIDEBAR_DEFAULT = 232;
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 400;
 const SIDEBAR_COLLAPSE_AT = 120; // dragging narrower than this collapses to icons
