@@ -1,10 +1,6 @@
-const COLUMNS = 'id, sender, phone, message, timestamp, api_key_name';
+const { toIso } = require('../utils/time');
 
-function toIso(value) {
-    if (!value) return null;
-    const date = value instanceof Date ? value : new Date(value);
-    return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
-}
+const COLUMNS = 'id, sender, phone, message, timestamp, api_key_name';
 
 function toMessage(row) {
     return {

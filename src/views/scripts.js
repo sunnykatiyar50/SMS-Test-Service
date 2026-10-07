@@ -124,8 +124,8 @@ async function copyText(text, button) {
 
 // --- Navigation ---
 
-const VIEWS = ['messages', 'send', 'api'];
-const VIEW_TITLES = { messages: 'Messages', send: 'Send test', api: 'API reference' };
+const VIEWS = ['messages', 'send', 'keys', 'api'];
+const VIEW_TITLES = { messages: 'Messages', send: 'Send test', keys: 'API keys', api: 'API reference' };
 
 function currentView() {
     const name = location.hash.replace(/^#\/?/, '');
@@ -144,6 +144,8 @@ function showView() {
     document.title = `${VIEW_TITLES[view]} · SMS Test Service`;
     if (view === 'messages') reloadWithSavedParams();
     if (view === 'send') $('phoneInput').value ? $('messageInput').focus() : $('senderInput').focus();
+    if (view === 'keys') loadKeys();
+    else forgetRevealedKeys();
 }
 
 function setSidebarCollapsed(collapsed) {
@@ -712,6 +714,197 @@ async function sendMessage(event) {
     }
 }
 
+// --- API keys ---
+
+// Full keys revealed on this page, by key id. Only kept while the page is open, and cleared when
+// navigating to another view.
+const revealedKeys = new Map();
+let keysData = { keys: [], adminTokenConfigured: false };
+
+function forgetRevealedKeys() {
+    revealedKeys.clear();
+    $('newKeyResult').classList.add('hidden');
+    $('newKeySecret').textContent = '';
+    $('newKeyExample').textContent = '';
+}
+
+async function apiJson(url, options = {}) {
+    const headers = options.body ? { 'Content-Type': 'application/json' } : {};
+    const response = await apiFetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+    const data = await response.json().catch(() => ({}));
+    return { response, data };
+}
+
+async function loadKeys() {
+    try {
+        const { response, data } = await apiJson('/api/keys');
+        if (!response.ok) throw new Error(data.error || response.statusText);
+        keysData = data;
+    } catch (error) {
+        keysData = { keys: [], adminTokenConfigured: false };
+        $('keysFootnote').textContent = `Could not load API keys: ${error.message}`;
+    }
+    renderKeys();
+}
+
+function keyExample(scope, secret) {
+    const base = location.origin;
+    if (scope === 'read') {
+        return [
+            `curl -H "Authorization: Bearer ${secret}" \\`,
+            `  "${base}/api/messages/latest?phone=%2B15551234567"`,
+        ].join('\n');
+    }
+    return [
+        `curl -X POST ${base}/api/messages \\`,
+        '  -H "Content-Type: application/json" \\',
+        `  -H "X-API-Key: ${secret}" \\`,
+        `  -d '{"phone": "+15551234567", "message": "Your OTP is 123456"}'`,
+    ].join('\n');
+}
+
+// Fetches (once) and returns a key's full value
+async function revealKey(rowId, url) {
+    if (revealedKeys.has(rowId)) return revealedKeys.get(rowId);
+    const { response, data } = await apiJson(url, { method: 'POST' });
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    revealedKeys.set(rowId, data.secret);
+    return data.secret;
+}
+
+function keyRow({ id, name, scope, prefix, source, messageCount, lastUsedAt, createdAt, revokedAt }) {
+    const rowId = id;
+    const revealUrl = `/api/keys/${id}/reveal`;
+    const tr = el('tr', revokedAt ? 'key-revoked' : '');
+
+    const nameCell = el('td', 'key-name');
+    nameCell.appendChild(el('span', null, name));
+    if (source === 'env') {
+        const chip = el('span', 'chip', 'from .env');
+        chip.title = 'Imported from INGEST_API_KEYS. It is managed here now: revoking it works even if it is still in .env.';
+        nameCell.appendChild(chip);
+    }
+    tr.appendChild(nameCell);
+
+    const typeCell = el('td');
+    typeCell.appendChild(el('span', `scope-badge scope-${scope}`, scope === 'send' ? 'Send' : 'Read'));
+    tr.appendChild(typeCell);
+
+    const keyCell = el('td', 'key-value');
+    const shown = revealedKeys.get(rowId);
+    keyCell.appendChild(el('code', null, shown || `${prefix}…`));
+    if (!revokedAt) {
+        const actions = el('span', 'key-actions');
+        const toggle = el('button', 'ghost small', shown ? 'Hide' : 'Show');
+        toggle.type = 'button';
+        toggle.addEventListener('click', async () => {
+            if (revealedKeys.has(rowId)) {
+                revealedKeys.delete(rowId);
+                return renderKeys();
+            }
+            try {
+                await revealKey(rowId, revealUrl);
+                renderKeys();
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+        const copy = el('button', 'ghost small', 'Copy');
+        copy.type = 'button';
+        copy.addEventListener('click', async () => {
+            try {
+                copyText(await revealKey(rowId, revealUrl), copy);
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+        actions.append(toggle, copy);
+        keyCell.appendChild(actions);
+    }
+    tr.appendChild(keyCell);
+
+    tr.appendChild(el('td', 'num', String(messageCount || 0)));
+    tr.appendChild(el('td', 'muted', lastUsedAt ? formatMessageTime(lastUsedAt) : 'Never'));
+    tr.appendChild(el('td', 'muted', new Date(createdAt).toLocaleDateString()));
+
+    const actionCell = el('td', 'key-row-action');
+    if (revokedAt) {
+        actionCell.appendChild(el('span', 'muted', `Revoked ${new Date(revokedAt).toLocaleDateString()}`));
+    } else {
+        const revoke = el('button', 'danger-ghost small', 'Revoke');
+        revoke.type = 'button';
+        revoke.addEventListener('click', () => revokeKey(id, name));
+        actionCell.appendChild(revoke);
+    }
+    tr.appendChild(actionCell);
+    return tr;
+}
+
+function renderKeys() {
+    const body = $('keysBody');
+    body.replaceChildren();
+    const rows = keysData.keys; // active first, then revoked (sorted by the server)
+    rows.forEach(row => body.appendChild(keyRow(row)));
+    $('keysEmpty').classList.toggle('hidden', rows.length > 0);
+    document.querySelector('.keys-table').classList.toggle('hidden', rows.length === 0);
+    $('keysFootnote').textContent = keysData.adminTokenConfigured
+        ? 'ADMIN_TOKEN from .env also gives full API access (including deleting messages). It is not shown here.'
+        : '';
+}
+
+function showKeyForm(visible) {
+    $('newKeyForm').classList.toggle('hidden', !visible);
+    $('newKeyButton').classList.toggle('hidden', visible);
+    $('keyNameError').textContent = '';
+    $('keyNameInput').classList.remove('invalid');
+    if (visible) {
+        $('newKeyResult').classList.add('hidden');
+        $('keyNameInput').focus();
+    } else {
+        $('newKeyForm').reset();
+    }
+}
+
+async function createKey(event) {
+    event.preventDefault();
+    const name = $('keyNameInput').value.trim();
+    const scope = $('keyScopeInput').value;
+    if (!name) {
+        $('keyNameError').textContent = 'Give the key a name, e.g. the app that will use it.';
+        $('keyNameInput').classList.add('invalid');
+        return;
+    }
+    $('createKeyButton').disabled = true;
+    try {
+        const { response, data } = await apiJson('/api/keys', { method: 'POST', body: JSON.stringify({ name, scope }) });
+        if (!response.ok) {
+            const message = data.details ? Object.entries(data.details).map(([field, msg]) => `${field === 'name' ? 'Name' : 'Type'} ${msg}.`).join(' ') : data.error;
+            $('keyNameError').textContent = message || 'Could not create the key.';
+            $('keyNameInput').classList.add('invalid');
+            return;
+        }
+        revealedKeys.set(data.key.id, data.secret);
+        showKeyForm(false);
+        $('newKeyName').textContent = data.key.name;
+        $('newKeySecret').textContent = data.secret;
+        $('newKeyExample').textContent = keyExample(data.key.scope, data.secret);
+        $('newKeyResult').classList.remove('hidden');
+        await loadKeys();
+    } catch (error) {
+        $('keyNameError').textContent = 'Could not reach the server.';
+    } finally {
+        $('createKeyButton').disabled = false;
+    }
+}
+
+async function revokeKey(id, name) {
+    if (!confirm(`Revoke "${name}"?\n\nAnything using this key stops working immediately. This can't be undone.`)) return;
+    const { response, data } = await apiJson(`/api/keys/${id}`, { method: 'DELETE' });
+    if (!response.ok) alert(data.error || 'Could not revoke the key.');
+    revealedKeys.delete(id);
+    await loadKeys();
+}
+
 // --- API reference ---
 
 function renderApiReference() {
@@ -797,6 +990,17 @@ window.addEventListener('DOMContentLoaded', () => {
             onFormInput();
         })
     );
+
+    // API keys
+    $('newKeyButton').addEventListener('click', () => showKeyForm(true));
+    $('cancelKeyButton').addEventListener('click', () => showKeyForm(false));
+    $('newKeyForm').addEventListener('submit', createKey);
+    $('keyNameInput').addEventListener('input', () => {
+        $('keyNameError').textContent = '';
+        $('keyNameInput').classList.remove('invalid');
+    });
+    $('copyNewKey').addEventListener('click', event => copyText($('newKeySecret').textContent, event.target));
+    $('dismissKeyResult').addEventListener('click', () => $('newKeyResult').classList.add('hidden'));
 
     // API reference
     document.querySelectorAll('.copy-button').forEach(button =>

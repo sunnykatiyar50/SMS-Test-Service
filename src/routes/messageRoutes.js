@@ -20,16 +20,17 @@ function createMessageRoutes({ messageModel, auth, config }) {
         message: { error: 'Too many messages, slow down.' },
     });
 
-    // Submit a message (X-API-Key, or an admin session for the dashboard test form)
+    // Submit a message: a Send key (X-API-Key), or an admin (the dashboard test form)
     router.post('/', ingestLimiter, auth.requireIngest, validateNewMessage, (req, res) =>
         controller.sendMessage(req, res)
     );
 
-    // Everything below is admin-only
-    router.get('/', auth.requireAdmin, validateListQuery, (req, res) => controller.getMessages(req, res));
-    router.get('/latest', auth.requireAdmin, validateListQuery, (req, res) =>
+    // Reading: a Read key, or an admin
+    router.get('/', auth.requireRead, validateListQuery, (req, res) => controller.getMessages(req, res));
+    router.get('/latest', auth.requireRead, validateListQuery, (req, res) =>
         controller.getLatestMessage(req, res)
     );
+    // Deleting: admin only
     router.delete('/', auth.requireAdmin, validateIdList, (req, res) => controller.deleteMessages(req, res));
     router.delete('/:id', auth.requireAdmin, validateIdParam, (req, res) => controller.deleteMessages(req, res));
 

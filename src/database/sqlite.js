@@ -26,6 +26,24 @@ async function connect() {
         db.exec('ALTER TABLE messages ADD COLUMN api_key_name TEXT');
     }
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp)');
+    db.exec(
+        `CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            scope TEXT NOT NULL,
+            key_hash TEXT NOT NULL UNIQUE,
+            key_prefix TEXT NOT NULL,
+            key_encrypted TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'dashboard',
+            created_at TEXT NOT NULL,
+            last_used_at TEXT,
+            revoked_at TEXT
+        )`
+    );
+    // Added after the table was first introduced
+    if (!db.prepare('PRAGMA table_info(api_keys)').all().some(c => c.name === 'source')) {
+        db.exec("ALTER TABLE api_keys ADD COLUMN source TEXT NOT NULL DEFAULT 'dashboard'");
+    }
 
     const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));
 
