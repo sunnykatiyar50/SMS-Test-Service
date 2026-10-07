@@ -21,6 +21,7 @@
     --sidebar-hover: #1f2937;
     --sidebar-active: #2563eb;
     --text-soft: #4b5563;
+    --control-border: #9aa3b0;
     --blue-soft-hover: #d6e2ff;
     --shadow: rgba(17, 24, 39, 0.08);
     /* Format badges */
@@ -56,6 +57,7 @@
     --blue-soft-hover: rgba(59, 130, 246, 0.28);
     --text: #e5e7eb;
     --text-soft: #c3c9d3;
+    --control-border: #5b6578;
     --muted: #9ca3af;
     --border: #2a3140;
     --border-strong: #3a4354;
@@ -95,6 +97,7 @@
     --blue-soft-hover: rgba(59, 130, 246, 0.28);
     --text: #e5e7eb;
     --text-soft: #c3c9d3;
+    --control-border: #5b6578;
     --muted: #9ca3af;
     --border: #2a3140;
     --border-strong: #3a4354;
@@ -827,6 +830,18 @@ body.resizing {
     flex-wrap: wrap;
 }
 
+/* Copy message / Copy code: clearly outlined in both themes */
+.detail-actions button {
+    border: 1px solid var(--control-border);
+    background: var(--surface);
+}
+
+.detail-actions button:hover:not(:disabled) {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: var(--surface);
+}
+
 .message-body {
     padding: 12px 14px;
     background: var(--surface-alt);
@@ -839,15 +854,6 @@ body.resizing {
     overflow-wrap: anywhere;
 }
 
-/* Small format tag at the start of a list row's preview text */
-.row-format {
-    display: inline-block;
-    margin-right: 6px;
-    padding: 0 5px;
-    font-size: 10px;
-    line-height: 16px;
-    vertical-align: 1px;
-}
 
 /* --- Formatted message body (formatters.js) --- */
 .body-toolbar {

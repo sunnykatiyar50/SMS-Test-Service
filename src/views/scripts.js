@@ -262,15 +262,8 @@ function renderMessages() {
 
         const body = el('div', 'row-body');
         body.appendChild(top);
-        const format = MessageFormat.detectFormat(msg.message || '');
-        const textLine = el('div', 'row-text');
-        if (format !== 'text') {
-            const tag = el('span', 'row-format format-badge', MessageFormat.LABELS[format]);
-            tag.dataset.format = format;
-            textLine.appendChild(tag);
-        }
-        textLine.appendChild(document.createTextNode(truncateMessage(MessageFormat.previewText(msg.message || '', format, htmlToText))));
-        body.appendChild(textLine);
+        // Readable one-line preview (HTML as text, syslog as "app: message"); the format badge is only in the detail pane
+        body.appendChild(el('div', 'row-text', truncateMessage(MessageFormat.previewText(msg.message || '', undefined, htmlToText))));
 
         li.appendChild(checkWrap);
         li.appendChild(body);
