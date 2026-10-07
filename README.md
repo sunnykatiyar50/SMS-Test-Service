@@ -9,7 +9,7 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 - REST API to submit, list, search, and delete messages
 - API-key authentication for applications that submit messages, and a password-protected dashboard
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
-- Web dashboard with sidebar navigation:
+- Web dashboard with a resizable sidebar for navigation (drag its edge; drag it narrow to collapse it to icons):
   - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
   - Messages are shown according to their format, with a switch between views:
     - **JSON**: indented and colour-coded, or raw.
