@@ -3,6 +3,7 @@ require('dotenv').config();
 const { loadConfig } = require('./config');
 const initializeDatabase = require('./database/initDatabase');
 const MessageModel = require('./models/messageModel');
+const ApiKeyModel = require('./models/apiKeyModel');
 const { createApp } = require('./server');
 const { logToFile } = require('./utils/logger');
 
@@ -31,9 +32,15 @@ async function main() {
 
     const db = await initializeDatabase();
     const messageModel = new MessageModel(db);
+    // Dashboard-created API keys are encrypted with a key derived from SESSION_SECRET
+    const apiKeyModel = new ApiKeyModel(db, { encryptionSecret: config.sessionSecret });
+    const activeKeys = (await apiKeyModel.list()).filter(k => !k.revokedAt).length;
+    if (!config.authDisabled && activeKeys === 0 && config.ingestApiKeys.length === 0) {
+        logToFile('No API keys yet: sign in to the dashboard and create one on the API keys page');
+    }
     scheduleRetention(messageModel, config.retentionDays);
 
-    const app = createApp({ config, messageModel });
+    const app = createApp({ config, messageModel, apiKeyModel });
     const server = app.listen(config.port, () => {
         logToFile(`Server is running on http://localhost:${config.port}`);
     });

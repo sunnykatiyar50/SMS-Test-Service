@@ -26,6 +26,19 @@ async function connect() {
         db.exec('ALTER TABLE messages ADD COLUMN api_key_name TEXT');
     }
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp)');
+    db.exec(
+        `CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            scope TEXT NOT NULL,
+            key_hash TEXT NOT NULL UNIQUE,
+            key_prefix TEXT NOT NULL,
+            key_encrypted TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT,
+            revoked_at TEXT
+        )`
+    );
 
     const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));
 

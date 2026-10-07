@@ -13,6 +13,7 @@ const request = require('supertest');
 const { loadConfig } = require('../src/config');
 const initializeDatabase = require('../src/database/initDatabase');
 const MessageModel = require('../src/models/messageModel');
+const ApiKeyModel = require('../src/models/apiKeyModel');
 const { createApp } = require('../src/server');
 
 const INGEST_KEY = 'ci-ingest-key-0123456789';
@@ -34,7 +35,8 @@ const ingest = body => request(app).post('/api/messages').set('X-API-Key', INGES
 
 before(async () => {
     db = await initializeDatabase();
-    app = createApp({ config: loadConfig(env), messageModel: new MessageModel(db) });
+    const config = loadConfig(env);
+    app = createApp({ config, messageModel: new MessageModel(db), apiKeyModel: new ApiKeyModel(db, { encryptionSecret: config.sessionSecret }) });
 });
 
 after(async () => {
@@ -44,6 +46,11 @@ after(async () => {
 describe('config', () => {
     test('refuses to start without auth settings', () => {
         assert.throws(() => loadConfig({}), /Invalid auth configuration/);
+    });
+
+    test('INGEST_API_KEYS is optional (keys can be created in the dashboard)', () => {
+        const { INGEST_API_KEYS, ...rest } = env;
+        assert.deepEqual(loadConfig(rest).ingestApiKeys, []);
     });
 
     test('AUTH_DISABLED skips the auth requirements', () => {

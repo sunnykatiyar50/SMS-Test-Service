@@ -31,6 +31,10 @@
                 <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 <span class="label">Send test</span>
             </a>
+            <a href="#/keys" class="nav-link" data-view="keys" title="API keys">
+                <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                <span class="label">API keys</span>
+            </a>
             <a href="#/api" class="nav-link" data-view="api" title="API reference">
                 <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                 <span class="label">API reference</span>
@@ -210,6 +214,63 @@
             </div>
         </section>
 
+        <!-- ===== API keys ===== -->
+        <section id="viewKeys" class="view hidden" data-view="keys">
+            <header class="view-header">
+                <div class="view-title">
+                    <h1>API keys</h1>
+                    <span class="muted">Send keys let your apps post messages. Read keys let tests list messages and read OTPs.</span>
+                </div>
+                <button type="button" id="newKeyButton" class="primary">New key</button>
+            </header>
+
+            <form id="newKeyForm" class="card key-form hidden" novalidate>
+                <div class="field">
+                    <label for="keyNameInput">Name</label>
+                    <input type="text" id="keyNameInput" maxlength="64" placeholder="checkout-app" autocomplete="off" />
+                    <small class="field-error" id="keyNameError"></small>
+                </div>
+                <div class="field">
+                    <label for="keyScopeInput">Type</label>
+                    <select id="keyScopeInput">
+                        <option value="send">Send: post messages</option>
+                        <option value="read">Read: list messages and read OTPs</option>
+                    </select>
+                </div>
+                <div class="key-form-actions">
+                    <button type="button" id="cancelKeyButton" class="ghost">Cancel</button>
+                    <button type="submit" id="createKeyButton" class="primary">Create key</button>
+                </div>
+            </form>
+
+            <div id="newKeyResult" class="card key-result hidden" role="status">
+                <div class="key-result-head">
+                    <h3>Key created: <span id="newKeyName"></span></h3>
+                    <button type="button" id="dismissKeyResult" class="ghost small">Done</button>
+                </div>
+                <div class="secret-row">
+                    <code id="newKeySecret"></code>
+                    <button type="button" id="copyNewKey" class="primary small">Copy key</button>
+                </div>
+                <div class="code-header">
+                    <h4>Try it</h4>
+                    <button type="button" class="copy-button" data-copy="newKeyExample">Copy</button>
+                </div>
+                <pre class="code" id="newKeyExample"></pre>
+            </div>
+
+            <div class="card keys-card">
+                <table class="keys-table">
+                    <thead>
+                        <tr><th>Name</th><th>Type</th><th>Key</th><th>Messages</th><th>Last used</th><th>Created</th><th></th></tr>
+                    </thead>
+                    <tbody id="keysBody"></tbody>
+                </table>
+                <p id="keysEmpty" class="empty-state hidden">No API keys yet. Create one so an app can send messages.</p>
+            </div>
+            <p id="keysFootnote" class="hint"></p>
+        </section>
+
         <!-- ===== API reference ===== -->
         <section id="viewApi" class="view hidden" data-view="api">
             <header class="view-header">
@@ -231,7 +292,7 @@
                     <h4>Headers</h4>
                     <table class="ref-table">
                         <tr><th>Content-Type</th><td><code>application/json</code></td></tr>
-                        <tr><th>X-API-Key</th><td>One of the keys in <code>INGEST_API_KEYS</code></td></tr>
+                        <tr><th>X-API-Key</th><td>A <b>Send</b> key from the <a href="#/keys">API keys</a> page (or <code>INGEST_API_KEYS</code> in <code>.env</code>)</td></tr>
                     </table>
 
                     <h4>Body</h4>
@@ -258,7 +319,7 @@
 
                 <article class="card">
                     <h3>Read messages from scripts and tests</h3>
-                    <p class="hint">Send <code>Authorization: Bearer &lt;ADMIN_TOKEN&gt;</code>. Phone numbers are masked unless you add <code>unmask=true</code>.</p>
+                    <p class="hint">Send <code>Authorization: Bearer &lt;key&gt;</code> with a <b>Read</b> key from the <a href="#/keys">API keys</a> page (lists and reads messages), or <code>ADMIN_TOKEN</code> (everything, including delete). Phone numbers are masked unless you add <code>unmask=true</code>.</p>
                     <table class="ref-table endpoints">
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages/latest?phone=…</code><br>Newest matching message, or 404. Includes <code>code</code>: the detected OTP, or <code>null</code></td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/messages</code><br><code>search</code>, <code>phone</code>, <code>startDate</code>, <code>endDate</code>, <code>page</code>, <code>pageSize</code> (max 100)</td></tr>

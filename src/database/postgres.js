@@ -30,6 +30,19 @@ async function connect() {
     `);
     await pool.query('ALTER TABLE messages ADD COLUMN IF NOT EXISTS api_key_name VARCHAR(64)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages (timestamp)');
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(64) NOT NULL UNIQUE,
+            scope VARCHAR(16) NOT NULL,
+            key_hash CHAR(64) NOT NULL UNIQUE,
+            key_prefix VARCHAR(32) NOT NULL,
+            key_encrypted TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            last_used_at TIMESTAMPTZ,
+            revoked_at TIMESTAMPTZ
+        )
+    `);
 
     return {
         dialect: 'postgres',

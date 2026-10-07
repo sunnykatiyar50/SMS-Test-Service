@@ -7,7 +7,7 @@ Built with Node.js and Express. Messages can be stored in SQLite (default), Post
 ## Features
 
 - REST API to submit, list, search, and delete messages
-- API-key authentication for applications that submit messages, and a password-protected dashboard
+- API keys managed in the dashboard: Send keys for apps, Read keys for tests; create, copy, and revoke them without touching the server. The dashboard itself is password-protected
 - Admin token for scripts and E2E tests, including a "latest message for this phone number" endpoint for reading OTPs
 - Web dashboard with a resizable sidebar for navigation (drag its edge; drag it narrow to collapse it to icons):
   - **Messages**: compact list with search (message, phone, and sender), date filters, pagination, bulk delete, keyboard navigation (↑/↓ or j/k), and a resizable detail pane with one-click "Copy code" for OTPs
@@ -39,32 +39,37 @@ sms-test-service
 │   │   ├── initDatabase.js       # Picks the driver based on DB_TYPE
 │   │   ├── mysql.js
 │   │   ├── postgres.js
-│   │   └── sqlite.js
+│   │   ├── sqlite.js             # Node's built-in node:sqlite
+│   │   └── ssl.js                # PG_SSL / MYSQL_SSL options
 │   ├── middleware
-│   │   ├── auth.js               # API keys, admin token, dashboard sessions
+│   │   ├── auth.js               # Dashboard sessions, API keys (Send/Read), ADMIN_TOKEN
 │   │   └── validate.js           # Request validation
 │   ├── models
+│   │   ├── apiKeyModel.js        # API keys created in the dashboard (hashed + encrypted)
 │   │   └── messageModel.js
 │   ├── routes
-│   │   └── messageRoutes.js
+│   │   ├── apiKeyRoutes.js       # /api/keys (admin only)
+│   │   └── messageRoutes.js      # /api/messages
 │   ├── utils
+│   │   ├── apiKeys.js            # Key generation, hashing, encryption
 │   │   ├── logger.js
 │   │   ├── mask.js
-│   │   └── session.js            # Signed session cookies
+│   │   ├── otp.js                # Detects the one-time code in a message
+│   │   ├── session.js            # Signed session cookies
+│   │   └── time.js
 │   └── views                     # Web interface (served as static files)
 │       ├── favicon.svg
-│       ├── formatters.js            # Detects and renders JSON / HTML / XML / syslog / text messages
-│       ├── index.html                # Dashboard: Messages, Send test, API reference
+│       ├── formatters.js         # Detects and renders JSON / HTML / XML / syslog / text messages
+│       ├── index.html            # Dashboard: Messages, Send test, API keys, API reference
 │       ├── login.html
 │       ├── login.js
 │       ├── scripts.js
 │       ├── styles.css
-│       └── theme.js                 # System / light / dark theme, applied before first paint
-├── test
-│   └── api.test.js
-├── logs/                         # Created automatically (app.log, app-YYYY-MM-DD.log)
-├── sms-db.sqlite                 # Created automatically when using SQLite
+│       └── theme.js              # System / light / dark theme, applied before first paint
+├── test                          # node:test suites (npm test)
+├── .github/workflows/docker.yml  # Tests, then builds and publishes the image to ghcr.io
 ├── Dockerfile
+├── docker-entrypoint.sh          # Checks mounted folders are writable before starting
 ├── docker-compose.yml
 ├── package.json
 ├── .env                          # Your local config (not committed)
@@ -126,11 +131,27 @@ npm test
 
 | Who | How | Can do |
 |-----|-----|--------|
-| Applications sending SMS | `X-API-Key: <key>` header, using one of the keys in `INGEST_API_KEYS` | `POST /api/messages` only |
-| Scripts and E2E tests | `Authorization: Bearer <ADMIN_TOKEN>` header | Everything |
+| Applications sending SMS | `X-API-Key: <key>` with a **Send** key | `POST /api/messages` only |
+| E2E tests reading OTPs | `Authorization: Bearer <key>` (or `X-API-Key`) with a **Read** key | `GET /api/messages`, `GET /api/messages/latest` |
+| Scripts needing full access | `Authorization: Bearer <ADMIN_TOKEN>` from `.env` | Everything |
 | People using the dashboard | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
 
-Each API key has a name (`INGEST_API_KEYS=web:key1,mobile:key2`). The name is stored with every message the key submits and returned as `apiKeyName`. Messages sent from the dashboard test form are stored as `dashboard`.
+### API keys
+
+Create and manage keys on the dashboard's **API keys** page. You don't need to edit `.env` or restart the server.
+
+- **New key:** give it a name (for example the app that will use it) and a type. **Send** keys post messages; **Read** keys list messages and fetch the latest one, for tests that read OTPs. The page shows the key with a **Copy** button and a ready-to-run `curl` example.
+- **Show / Copy:** any active key can be shown or copied again later from the list.
+- **Usage:** the list shows how many messages each key sent and when it was last used. Every message records the name of the key that sent it, returned as `apiKeyName`. Messages from the dashboard's test form are recorded as `dashboard`.
+- **Revoke:** anything using a revoked key gets `401` immediately. Revoked keys stay in the list, struck through, so their messages keep a known name.
+- **Key format:** `sms_send_…` or `sms_read_…`, so a key's type is visible in the key itself.
+
+How keys are protected:
+- **Storage:** the database stores a SHA-256 hash of each key, used to check requests, and an AES-256-GCM encrypted copy, used only to show it in the dashboard. The encryption key is derived from `SESSION_SECRET`.
+- **If `SESSION_SECRET` changes:** existing keys keep working, but they can no longer be shown or copied. Create new ones if you need to copy them.
+- **Who can see keys:** only an admin (dashboard session or `ADMIN_TOKEN`) can list, show, create or revoke keys. API keys can't manage keys. Showing a key is logged with its name and the caller's IP, and these responses are never cached.
+
+Keys in `INGEST_API_KEYS` (`.env`, `name:key` pairs) still work as Send keys. They're listed on the page marked `.env` and can be copied there; to revoke one, remove it from `.env` and restart.
 
 To turn off authentication completely for local development, set `AUTH_DISABLED=true`. Don't do this on a server other people can reach.
 
@@ -142,7 +163,7 @@ The image is published to GitHub Container Registry as `ghcr.io/sunnykatiyar50/s
 
 Requires Docker with the Compose plugin.
 
-1. Copy `sample.env` to `.env` and fill in at least `INGEST_API_KEYS`, `ADMIN_PASSWORD`, and `SESSION_SECRET`. Compose reads **all** settings from this file.
+1. Copy `sample.env` to `.env` and fill in at least `ADMIN_PASSWORD` and `SESSION_SECRET`. After starting, create API keys on the dashboard's **API keys** page. Compose reads **all** settings from this file.
 2. Start it:
    ```
    docker compose up -d
@@ -211,7 +232,7 @@ Errors are returned as JSON: `{ "error": "..." }`. Validation errors also includ
 
 ### `POST /api/messages`
 
-Store a new message. The server adds the timestamp. Requires `X-API-Key`.
+Store a new message. The server adds the timestamp. Requires a **Send** key in `X-API-Key`.
 
 Request body (JSON):
 
@@ -237,7 +258,7 @@ Returns `400` for invalid input, `401` for a missing or wrong API key, and `429`
 
 ### `GET /api/messages`
 
-List messages, newest first, with optional filtering and pagination. Requires admin authentication.
+List messages, newest first, with optional filtering and pagination. Requires a **Read** key (`Authorization: Bearer <key>` or `X-API-Key`) or admin authentication.
 
 | Query parameter | Default | Description |
 |-----------------|---------|-------------|
@@ -275,7 +296,7 @@ Amounts (`Rs 5,000`), order, transaction and reference numbers, dates, times, an
 
 ### `GET /api/messages/latest`
 
-Return the newest message that matches the same filters as `GET /api/messages` (usually `phone`), or `404` if there is none. Requires admin authentication. This is handy in E2E tests to read the OTP your application just sent:
+Return the newest message that matches the same filters as `GET /api/messages` (usually `phone`), or `404` if there is none. Requires a **Read** key or admin authentication. This is handy in E2E tests to read the OTP your application just sent:
 
 ```
 curl -H "Authorization: Bearer $ADMIN_TOKEN" "http://localhost:30001/api/messages/latest?phone=15551234567"
@@ -310,6 +331,18 @@ curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: applica
 
 Response `200`: `{ "message": "Messages deleted successfully.", "deleted": 3 }`
 
+### API key management
+
+Admin only (dashboard session or `ADMIN_TOKEN`); API keys themselves can't use these endpoints. Responses are sent with `Cache-Control: no-store`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/keys` | List keys (never including their values), `.env` keys, and whether `ADMIN_TOKEN` is set |
+| `POST` | `/api/keys` | Create a key: `{ "name": "checkout-app", "scope": "send" }` (`send` or `read`). Returns `{ key, secret }` |
+| `POST` | `/api/keys/:id/reveal` | Returns `{ secret }` for an active key. `409` if it can't be decrypted because `SESSION_SECRET` changed |
+| `POST` | `/api/keys/env/:name/reveal` | Returns `{ secret }` for an `INGEST_API_KEYS` entry |
+| `DELETE` | `/api/keys/:id` | Revoke a key |
+
 ### `GET /health`
 
 Public. Returns `{ "status": "ok" }` when the database is reachable, `503` otherwise. Used by the Docker health check.
@@ -321,7 +354,7 @@ See `sample.env` for a commented template.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `30001` | Port the server listens on |
-| `INGEST_API_KEYS` | — | Required. Comma-separated `name:key` pairs accepted in `X-API-Key`. Keys must be at least 16 characters. |
+| `INGEST_API_KEYS` | — | Optional. Send keys as comma-separated `name:key` pairs (16+ characters each), in addition to keys created on the dashboard's API keys page |
 | `ADMIN_USERNAME` | `admin` | Dashboard username. Changing it signs out existing sessions. |
 | `ADMIN_PASSWORD` | — | Required. Dashboard password |
 | `SESSION_SECRET` | — | Required. At least 32 characters; signs session cookies |
@@ -392,7 +425,8 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 
 - **The server exits with `Invalid auth configuration`:** one of the required auth settings is missing, too short, or still a `change-me` placeholder. The message lists what to fix.
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
-- **`401 Invalid API key`:** the `X-API-Key` value doesn't match any key in `INGEST_API_KEYS`. Restart the server after changing `.env`.
+- **`401 Invalid or revoked API key`:** the key doesn't match an active key on the API keys page or in `INGEST_API_KEYS`. After changing `.env`, restart the server.
+- **`403 This is a Read key…` / `This is a Send key…`:** the key's type doesn't allow that request. Sending needs a Send key, and reading needs a Read key.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`.
 - **`EACCES: permission denied` for `/app/logs/app.log` or `unable to open database file` in Docker:** the mounted folder isn't writable by UID 1000, which the container runs as. This usually happens when Docker created a bind-mount folder as root. Fix it once on the host with `sudo chown -R 1000:1000 <folder>`, or start the container once with `user: root` (Compose) / `--user root` to have it fixed automatically. The container's startup output names the folder and the command. If only the log folder is affected, the app keeps running and logs to stdout.
 - **`ECONNREFUSED 127.0.0.1:5432` (or `:3306`) in Docker:** `PG_HOST` / `MYSQL_HOST` is `localhost`, which inside a container means the container itself. Use the database container's service name (`postgres` with the bundled profile), or `host.docker.internal` for a database on the host machine.

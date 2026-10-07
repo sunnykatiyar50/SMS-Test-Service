@@ -4,14 +4,15 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createAuth } = require('./middleware/auth');
 const createMessageRoutes = require('./routes/messageRoutes');
+const createApiKeyRoutes = require('./routes/apiKeyRoutes');
 const { logToFile } = require('./utils/logger');
 
 const viewsDir = path.join(__dirname, 'views');
 
 // Builds the Express app. Kept separate from app.js so tests can create it with their own config and database.
-function createApp({ config, messageModel }) {
+function createApp({ config, messageModel, apiKeyModel }) {
     const app = express();
-    const auth = createAuth(config);
+    const auth = createAuth(config, { apiKeyModel });
 
     if (config.trustProxy) {
         // e.g. TRUST_PROXY=1 behind one reverse proxy, so req.ip / req.secure reflect the real client
@@ -59,6 +60,7 @@ function createApp({ config, messageModel }) {
     app.get('/auth/status', auth.status);
 
     app.use('/api/messages', createMessageRoutes({ messageModel, auth, config }));
+    app.use('/api/keys', createApiKeyRoutes({ apiKeyModel, auth, config }));
     app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
     // The dashboard needs a session; the login page and static assets are public

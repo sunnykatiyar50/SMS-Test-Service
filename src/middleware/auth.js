@@ -4,16 +4,23 @@ const { logToFile } = require('../utils/logger');
 const SESSION_COOKIE = 'sms_session';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-function createAuth(config) {
+// Who can do what:
+//   admin (dashboard session, ADMIN_TOKEN, or AUTH_DISABLED)  everything
+//   Send key (INGEST_API_KEYS, or created in the dashboard)    POST /api/messages
+//   Read key (created in the dashboard)                         GET /api/messages and /api/messages/latest
+function createAuth(config, { apiKeyModel } = {}) {
     const ttlMs = config.sessionTtlHours * 60 * 60 * 1000;
+
+    const bearerToken = req => {
+        const header = req.get('authorization') || '';
+        return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    };
 
     // Returns how the request is authenticated as admin: 'disabled', 'bearer', 'cookie' or null
     function adminAuthMethod(req) {
         if (config.authDisabled) return 'disabled';
-        const header = req.get('authorization') || '';
-        if (config.adminToken && header.startsWith('Bearer ') && safeEqual(header.slice(7), config.adminToken)) {
-            return 'bearer';
-        }
+        const bearer = bearerToken(req);
+        if (config.adminToken && bearer && safeEqual(bearer, config.adminToken)) return 'bearer';
         const token = parseCookies(req.get('cookie'))[SESSION_COOKIE];
         const session = token && verifySessionToken(token, config.sessionSecret);
         // Changing ADMIN_USERNAME signs out existing sessions
@@ -27,6 +34,21 @@ function createAuth(config) {
         return method !== 'cookie' || SAFE_METHODS.has(req.method) || req.get('x-requested-with') === 'fetch';
     }
 
+    // Finds the API key a request presents (X-API-Key, or Authorization: Bearer for dashboard keys).
+    // Returns { name, scope, source } or null.
+    async function findApiKey(req) {
+        const presented = req.get('x-api-key') || bearerToken(req);
+        if (!presented) return null;
+        // .env keys: compare against every key so the response time doesn't reveal which one matched
+        let envMatch = null;
+        for (const entry of config.ingestApiKeys) {
+            if (safeEqual(presented, entry.key) && !envMatch) envMatch = entry;
+        }
+        if (envMatch) return { name: envMatch.name, scope: 'send', source: 'env' };
+        const stored = apiKeyModel ? await apiKeyModel.authenticate(presented) : null;
+        return stored ? { name: stored.name, scope: stored.scope, source: 'dashboard' } : null;
+    }
+
     function requireAdmin(req, res, next) {
         const method = adminAuthMethod(req);
         if (!method) return res.status(401).json({ error: 'Authentication required' });
@@ -35,26 +57,29 @@ function createAuth(config) {
         next();
     }
 
-    // Ingest accepts an X-API-Key from INGEST_API_KEYS, or an admin (used by the dashboard test form)
-    function requireIngest(req, res, next) {
-        const provided = req.get('x-api-key');
-        if (provided) {
-            // Compare against every key so the response time does not reveal which one matched
-            let match = null;
-            for (const entry of config.ingestApiKeys) {
-                if (safeEqual(provided, entry.key) && !match) match = entry;
-            }
-            if (match) {
-                req.auth = { method: 'apiKey', apiKeyName: match.name, isAdmin: false };
+    // Admin, or an API key with the given scope
+    function requireKeyOrAdmin(scope) {
+        return async (req, res, next) => {
+            const method = adminAuthMethod(req);
+            if (method) {
+                if (!passesCsrfCheck(req, method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
+                req.auth = { method, apiKeyName: 'dashboard', isAdmin: true };
                 return next();
             }
-            if (!config.authDisabled) return res.status(401).json({ error: 'Invalid API key' });
-        }
-        const method = adminAuthMethod(req);
-        if (!method) return res.status(401).json({ error: 'Missing X-API-Key header' });
-        if (!passesCsrfCheck(req, method)) return res.status(403).json({ error: 'Missing X-Requested-With header' });
-        req.auth = { method, apiKeyName: 'dashboard', isAdmin: true };
-        next();
+            const key = await findApiKey(req);
+            if (!key) {
+                const presented = req.get('x-api-key') || bearerToken(req);
+                return res.status(401).json({ error: presented ? 'Invalid or revoked API key' : 'Missing API key' });
+            }
+            if (key.scope !== scope) {
+                return res.status(403).json({
+                    error: scope === 'send' ? 'This is a Read key; sending messages needs a Send key'
+                        : 'This is a Send key; reading messages needs a Read key',
+                });
+            }
+            req.auth = { method: 'apiKey', apiKeyName: key.name, scope: key.scope, isAdmin: false };
+            next();
+        };
     }
 
     function cookieOptions(req) {
@@ -101,7 +126,15 @@ function createAuth(config) {
         });
     }
 
-    return { adminAuthMethod, requireAdmin, requireIngest, login, logout, status };
+    return {
+        adminAuthMethod,
+        requireAdmin,
+        requireIngest: requireKeyOrAdmin('send'),
+        requireRead: requireKeyOrAdmin('read'),
+        login,
+        logout,
+        status,
+    };
 }
 
 module.exports = { createAuth, SESSION_COOKIE };

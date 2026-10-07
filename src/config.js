@@ -36,7 +36,7 @@ function loadConfig(env = process.env) {
 
     if (!config.authDisabled) {
         const problems = [];
-        if (config.ingestApiKeys.length === 0) problems.push('INGEST_API_KEYS is not set');
+        // INGEST_API_KEYS is optional: keys can be created in the dashboard (API keys page) instead
         if (config.ingestApiKeys.some(k => !k.name || k.key.length < 16)) {
             problems.push('every INGEST_API_KEYS entry needs a name and a key of at least 16 characters');
         }
