@@ -155,6 +155,86 @@ function setSidebarCollapsed(collapsed) {
     saveSetting('sms_sidebar_collapsed', collapsed ? 'yes' : 'no');
 }
 
+// --- Resizable sidebar ---
+
+const SIDEBAR_DEFAULT = 216;
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 400;
+const SIDEBAR_COLLAPSE_AT = 120; // dragging narrower than this collapses to icons
+
+function applySidebarWidth(px) {
+    document.documentElement.style.setProperty('--sidebar-width', `${px}px`);
+    $('sidebarResizer').setAttribute('aria-valuenow', String(px));
+    // The message pane's width is a share of the remaining space, so let it re-measure
+    window.dispatchEvent(new Event('resize'));
+}
+
+// Applied as soon as the script runs, before the first paint, so the sidebar doesn't jump
+(function restoreSidebarWidth() {
+    const saved = parseInt(readSetting('sms_sidebar_width', ''), 10);
+    if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) {
+        document.documentElement.style.setProperty('--sidebar-width', `${saved}px`);
+    }
+})();
+
+function initSidebarResizer() {
+    const handle = $('sidebarResizer');
+    // The target width (CSS variable), not the measured one, which lags while the width animates
+    const current = () =>
+        parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'), 10) || SIDEBAR_DEFAULT;
+    const clamp = px => Math.min(Math.max(Math.round(px), SIDEBAR_MIN), SIDEBAR_MAX);
+    handle.setAttribute('aria-valuemin', String(SIDEBAR_MIN));
+    handle.setAttribute('aria-valuemax', String(SIDEBAR_MAX));
+    handle.setAttribute('aria-valuenow', String(current()));
+
+    handle.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        document.body.classList.add('resizing');
+        const left = $('sidebar').getBoundingClientRect().left;
+        let width = current();
+        let wantsCollapse = false;
+        let frame = 0;
+        const onMove = moveEvent => {
+            const raw = moveEvent.clientX - left;
+            wantsCollapse = raw < SIDEBAR_COLLAPSE_AT;
+            handle.classList.toggle('will-collapse', wantsCollapse);
+            width = clamp(raw);
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => applySidebarWidth(width));
+        };
+        const onUp = () => {
+            handle.removeEventListener('pointermove', onMove);
+            handle.removeEventListener('pointerup', onUp);
+            handle.removeEventListener('pointercancel', onUp);
+            document.body.classList.remove('resizing');
+            handle.classList.remove('will-collapse');
+            if (wantsCollapse) {
+                // Keep the last expanded width for when the sidebar is expanded again
+                applySidebarWidth(clamp(parseInt(readSetting('sms_sidebar_width', ''), 10) || SIDEBAR_DEFAULT));
+                setSidebarCollapsed(true);
+            } else {
+                saveSetting('sms_sidebar_width', String(width));
+            }
+        };
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', onUp);
+        handle.addEventListener('pointercancel', onUp);
+    });
+    // Keyboard: arrow keys resize in 16px steps
+    handle.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const width = clamp(current() + (event.key === 'ArrowRight' ? 16 : -16));
+        applySidebarWidth(width);
+        saveSetting('sms_sidebar_width', String(width));
+    });
+    handle.addEventListener('dblclick', () => {
+        applySidebarWidth(SIDEBAR_DEFAULT);
+        saveSetting('sms_sidebar_width', String(SIDEBAR_DEFAULT));
+    });
+}
+
 async function loadSession() {
     try {
         const response = await fetch('/auth/status');
@@ -682,6 +762,7 @@ window.addEventListener('DOMContentLoaded', () => {
     $('rangeSelect').addEventListener('change', event => setTimeRange(event.target.value));
     $('rangeChip').addEventListener('click', () => setTimeRange('all'));
     initPaneResizer();
+    initSidebarResizer();
     $('resetFiltersButton').addEventListener('click', resetFilters);
     $('refreshButton').addEventListener('click', reloadCurrentPage);
     $('prevPage').addEventListener('click', () => changePage(-1));
