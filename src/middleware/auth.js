@@ -23,9 +23,10 @@ function createAuth(config, { apiKeyModel } = {}) {
     const passwordFingerprint = password =>
         crypto.createHmac('sha256', config.sessionSecret).update(`password:${password}`).digest('base64url').slice(0, 22);
 
+    // "Authorization: Bearer <token>"; the scheme name is case-insensitive (RFC 9110)
     const bearerToken = req => {
-        const header = req.get('authorization') || '';
-        return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+        const match = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(req.get('authorization') || '');
+        return match ? match[1] : '';
     };
 
     // The signed-in dashboard account, if the session cookie is valid and still matches .env:
@@ -57,7 +58,8 @@ function createAuth(config, { apiKeyModel } = {}) {
         return method !== 'cookie' || SAFE_METHODS.has(req.method) || req.get('x-requested-with') === 'fetch';
     }
 
-    // Finds the API key a request presents (X-API-Key, or Authorization: Bearer). All keys live in
+    // Finds the API key a request presents: X-API-Key, or Authorization: Bearer for clients that can't
+    // set custom headers (both work for Send and Read keys). All keys live in
     // the database, including INGEST_API_KEYS entries, which are imported at startup.
     // Returns { name, scope } or null.
     async function findApiKey(req) {

@@ -138,6 +138,32 @@ describe('using keys', () => {
         assert.match(read.body.error, /Read key/);
     });
 
+    test('a Send key also works as an Authorization: Bearer header, in any letter case', async () => {
+        const { secret } = await createKey('bearer-sender', 'send');
+        const post = auth => request(app).post('/api/messages').set('Authorization', auth).send({ phone: '15553330000', message: 'hi' });
+
+        const sent = await post(`Bearer ${secret}`);
+        assert.equal(sent.status, 201);
+        const stored = await admin(request(app).get('/api/messages?phone=15553330000'));
+        assert.equal(stored.body.messages[0].apiKeyName, 'bearer-sender');
+
+        assert.equal((await post(`bearer ${secret}`)).status, 201);
+        assert.equal((await post(`BEARER  ${secret} `)).status, 201);
+        assert.equal((await post('Bearer wrong-key-0123456789')).status, 401);
+        assert.equal((await post(`Basic ${secret}`)).status, 401);
+        assert.equal((await post(`Bearer ${secret} extra`)).status, 401);
+    });
+
+    test('X-API-Key wins when both headers are sent', async () => {
+        const { secret: sendKey } = await createKey('header-wins', 'send');
+        const res = await request(app)
+            .post('/api/messages')
+            .set('X-API-Key', sendKey)
+            .set('Authorization', 'Bearer something-else-0123456789')
+            .send({ phone: '15553340000', message: 'hi' });
+        assert.equal(res.status, 201);
+    });
+
     test('a Read key can list and fetch the latest message, but not send or delete', async () => {
         const { secret: sendKey } = await createKey('otp-sender', 'send');
         const { secret: readKey } = await createKey('e2e-tests', 'read');

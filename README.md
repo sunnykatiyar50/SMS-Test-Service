@@ -131,7 +131,7 @@ npm test
 
 | Who | How | Can do |
 |-----|-----|--------|
-| Applications sending SMS | `X-API-Key: <key>` with a **Send** key | `POST /api/messages` only |
+| Applications sending SMS | `X-API-Key: <key>` (or `Authorization: Bearer <key>`) with a **Send** key | `POST /api/messages` only |
 | E2E tests reading OTPs | `Authorization: Bearer <key>` (or `X-API-Key`) with a **Read** key | `GET /api/messages`, `GET /api/messages/latest` |
 | Scripts needing full access | `Authorization: Bearer <ADMIN_TOKEN>` from `.env` | Everything |
 | Dashboard admin | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
@@ -254,7 +254,7 @@ Errors are returned as JSON: `{ "error": "..." }`. Validation errors also includ
 
 ### `POST /api/messages`
 
-Store a new message. The server adds the timestamp. Requires a **Send** key in `X-API-Key`.
+Store a new message. The server adds the timestamp. Requires a **Send** key, in an `X-API-Key` header or, for HTTP clients and SMS-provider integrations that can't set custom headers, as `Authorization: Bearer <key>`. If both are sent, `X-API-Key` is used.
 
 Request body (JSON):
 
@@ -270,6 +270,8 @@ curl -X POST http://localhost:30001/api/messages \
   -H "X-API-Key: $API_KEY" \
   -d '{"sender": "MyApp", "phone": "15551234567", "message": "Your OTP is 123456"}'
 ```
+
+The same request with a Bearer header: replace the `X-API-Key` line with `-H "Authorization: Bearer $API_KEY"`.
 
 Response `201`:
 ```json
