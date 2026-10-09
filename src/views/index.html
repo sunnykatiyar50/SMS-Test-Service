@@ -294,6 +294,7 @@
                     <table class="ref-table">
                         <tr><th>Content-Type</th><td><code>application/json</code></td></tr>
                         <tr><th>X-API-Key</th><td>A <b>Send</b> key from the <a href="#/keys">API keys</a> page (or <code>INGEST_API_KEYS</code> in <code>.env</code>)</td></tr>
+                        <tr><th>Authorization</th><td>Or, for clients that can't set custom headers: <code>Bearer &lt;Send key&gt;</code></td></tr>
                     </table>
 
                     <h4>Body</h4>
@@ -313,7 +314,7 @@
                     <table class="ref-table">
                         <tr><th><span class="status ok">201</span></th><td>Stored. Returns <code>{ success, id, timestamp }</code></td></tr>
                         <tr><th><span class="status err">400</span></th><td>Invalid input; <code>details</code> lists the problem per field</td></tr>
-                        <tr><th><span class="status err">401</span></th><td>Missing or unknown <code>X-API-Key</code></td></tr>
+                        <tr><th><span class="status err">401</span></th><td>Missing or unknown API key</td></tr>
                         <tr><th><span class="status err">429</span></th><td>Rate limit exceeded</td></tr>
                     </table>
                 </article>
